@@ -9,6 +9,7 @@ import {
   usePipecatClientTransportState, 
   usePipecatClientMicControl 
 } from "@pipecat-ai/client-react";
+import { TransportState } from "@pipecat-ai/client-js";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -19,7 +20,7 @@ export function Dashboard() {
   const { isMicEnabled } = usePipecatClientMicControl();
   
   // Helper function to determine connected state (matching your ConnectButton logic)
-  const isConnectedState = (state: string): boolean => {
+  const isConnectedState = (state: TransportState): boolean => {
     return state === "connected" || state === "ready";
   };
   
