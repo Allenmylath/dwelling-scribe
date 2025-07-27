@@ -52,6 +52,11 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				'property-card': 'hsl(var(--property-card))',
+				'property-card-hover': 'hsl(var(--property-card-hover))',
+				'price-highlight': 'hsl(var(--price-highlight))',
+				'status-active': 'hsl(var(--status-active))',
+				'chat-background': 'hsl(var(--chat-background))',
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
