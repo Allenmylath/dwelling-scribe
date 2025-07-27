@@ -4,40 +4,55 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Search, Clock, Mic, MicOff } from "lucide-react";
+import { Send, Bot, User, Search, Clock, Mic, MicOff, Phone, PhoneOff } from "lucide-react";
+import { 
+  usePipecatClient, 
+  useRTVIClientEvent, 
+  usePipecatClientMicControl,
+  usePipecatClientTransportState 
+} from "@pipecat-ai/client-react";
+import { RTVIEvent, TransportState } from "@pipecat-ai/client-js";
 
 interface ChatMessage {
   id: string;
-  type: 'user' | 'ai';
+  type: 'user' | 'bot';
   content: string;
   timestamp: Date;
-  messageType: 'text' | 'transcription';
+  messageType: 'text' | 'transcription' | 'audio';
   final?: boolean;
 }
 
 interface ChatConsoleProps {
   onSearch?: (query: string) => void;
-  isConnected?: boolean;
+  pipecatEndpoint?: string;
 }
 
-export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) {
+export function ChatConsole({ 
+  onSearch, 
+  pipecatEndpoint = "/api/connect" 
+}: ChatConsoleProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
-      type: 'ai',
-      content: 'Hello! I\'m your real estate assistant. I can help you search for properties. Try asking me something like "Find me a house with good fencing" or "Show me properties under $500,000".',
+      type: 'bot',
+      content: 'Hello! I\'m your real estate assistant. I can help you search for properties. You can speak to me or type your questions!',
       timestamp: new Date(),
       messageType: 'text'
     }
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [isSpeechEnabled, setIsSpeechEnabled] = useState(false);
-  const [recognition, setRecognition] = useState<any>(null);
-  const [currentTranscript, setCurrentTranscript] = useState('');
-  const [speechTimeout, setSpeechTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [currentUserTranscript, setCurrentUserTranscript] = useState('');
+  const [currentBotTranscript, setBotCurrentTranscript] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // Pipecat hooks
+  const pipecatClient = usePipecatClient();
+  const { enableMic, isMicEnabled } = usePipecatClientMicControl();
+  const transportState = usePipecatClientTransportState();
+
+  const isConnected = transportState === TransportState.Connected;
+  const isConnecting = transportState === TransportState.Connecting;
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -49,134 +64,142 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
     }
   }, [messages]);
 
-  // Initialize speech recognition
-  useEffect(() => {
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const recognitionInstance = new SpeechRecognition();
+  // Handle user speech transcription
+  useRTVIClientEvent(
+    RTVIEvent.UserTranscript,
+    useCallback((transcript: any) => {
+      console.log("👤 User transcript:", transcript);
       
-      recognitionInstance.continuous = true;
-      recognitionInstance.interimResults = true;
-      recognitionInstance.lang = 'en-US';
-
-      recognitionInstance.onstart = () => {
-        console.log("🎙️ Speech recognition started");
-        setIsListening(true);
-      };
-
-      recognitionInstance.onresult = (event: any) => {
-        let finalTranscript = '';
-        let interimTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-
-        // Update current transcript for display (but don't show interim)
-        if (finalTranscript) {
-          console.log("✅ Final transcript received:", finalTranscript);
-          setCurrentTranscript(finalTranscript.trim());
-          
-          // Clear any existing timeout
-          if (speechTimeout) {
-            clearTimeout(speechTimeout);
-          }
-          
-          // Set a timeout to auto-send the message after speech stops
-          const timeout = setTimeout(() => {
-            handleSpeechMessage(finalTranscript.trim());
-          }, 1500); // Wait 1.5 seconds after final transcript
-          
-          setSpeechTimeout(timeout);
-        }
-      };
-
-      recognitionInstance.onend = () => {
-        console.log("🔇 Speech recognition ended");
-        setIsListening(false);
+      if (transcript.final) {
+        // Add final user message
+        const userMessage: ChatMessage = {
+          id: `user-${Date.now()}`,
+          type: 'user',
+          content: transcript.text,
+          timestamp: new Date(),
+          messageType: 'transcription',
+          final: true
+        };
         
-        // If we were listening and speech was enabled, restart
-        if (isSpeechEnabled) {
-          setTimeout(() => {
-            if (isSpeechEnabled) {
-              recognitionInstance.start();
-            }
-          }, 100);
-        }
-      };
-
-      recognitionInstance.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        setIsListening(false);
+        setMessages(prev => [...prev, userMessage]);
+        setCurrentUserTranscript('');
         
-        // Don't restart on permission errors
-        if (event.error === 'not-allowed') {
-          setIsSpeechEnabled(false);
-          alert('Microphone permission denied. Please enable microphone access and try again.');
+        // Trigger search if callback provided
+        if (onSearch && transcript.text.trim()) {
+          onSearch(transcript.text.trim());
         }
-      };
+      } else {
+        // Show interim transcript
+        setCurrentUserTranscript(transcript.text);
+      }
+    }, [onSearch])
+  );
 
-      setRecognition(recognitionInstance);
-    }
-  }, [speechTimeout, isSpeechEnabled]);
+  // Handle bot speech transcription
+  useRTVIClientEvent(
+    RTVIEvent.BotTranscript,
+    useCallback((transcript: any) => {
+      console.log("🤖 Bot transcript:", transcript);
+      
+      if (transcript.final) {
+        // Add final bot message
+        const botMessage: ChatMessage = {
+          id: `bot-${Date.now()}`,
+          type: 'bot',
+          content: transcript.text,
+          timestamp: new Date(),
+          messageType: 'transcription',
+          final: true
+        };
+        
+        setMessages(prev => [...prev, botMessage]);
+        setBotCurrentTranscript('');
+        setIsLoading(false);
+      } else {
+        // Show interim transcript
+        setBotCurrentTranscript(transcript.text);
+      }
+    }, [])
+  );
 
-  // Handle speech message (auto-send when speech is complete)
-  const handleSpeechMessage = useCallback(async (transcript: string) => {
-    if (!transcript.trim()) return;
+  // Handle bot started speaking
+  useRTVIClientEvent(
+    RTVIEvent.BotStartedSpeaking,
+    useCallback(() => {
+      console.log("🤖 Bot started speaking");
+      setIsLoading(true);
+    }, [])
+  );
 
-    console.log("📤 Auto-sending speech message:", transcript);
-    
-    // Clear current transcript
-    setCurrentTranscript('');
-    
-    // Clear timeout
-    if (speechTimeout) {
-      clearTimeout(speechTimeout);
-      setSpeechTimeout(null);
-    }
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: transcript,
-      timestamp: new Date(),
-      messageType: 'transcription',
-      final: true
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setIsLoading(true);
-
-    // Trigger property search
-    if (onSearch) {
-      onSearch(transcript);
-    }
-
-    // Simulate AI response
-    setTimeout(() => {
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'ai',
-        content: `I'm searching for properties based on: "${transcript}". Please check the main area for results. The search will include properties that match your criteria.`,
-        timestamp: new Date(),
-        messageType: 'text'
-      };
-      setMessages(prev => [...prev, aiMessage]);
+  // Handle bot stopped speaking
+  useRTVIClientEvent(
+    RTVIEvent.BotStoppedSpeaking,
+    useCallback(() => {
+      console.log("🤖 Bot stopped speaking");
       setIsLoading(false);
-    }, 1000);
-  }, [onSearch, speechTimeout]);
+    }, [])
+  );
+
+  // Handle user started speaking
+  useRTVIClientEvent(
+    RTVIEvent.UserStartedSpeaking,
+    useCallback(() => {
+      console.log("👤 User started speaking");
+    }, [])
+  );
+
+  // Handle user stopped speaking
+  useRTVIClientEvent(
+    RTVIEvent.UserStoppedSpeaking,
+    useCallback(() => {
+      console.log("👤 User stopped speaking");
+    }, [])
+  );
+
+  // Handle transport state changes
+  useRTVIClientEvent(
+    RTVIEvent.TransportStateChanged,
+    useCallback((state: TransportState) => {
+      console.log("🔄 Transport state changed to:", state);
+    }, [])
+  );
+
+  // Handle connection/disconnection
+  const handleConnectionToggle = async () => {
+    try {
+      if (isConnected) {
+        await pipecatClient.disconnect();
+      } else {
+        setIsLoading(true);
+        await pipecatClient.connect({
+          endpoint: pipecatEndpoint,
+          requestData: {
+            // Add any custom data your endpoint needs
+          }
+        });
+        setIsLoading(false);
+      }
+    } catch (error) {
+      console.error("Connection error:", error);
+      setIsLoading(false);
+    }
+  };
+
+  // Handle microphone toggle
+  const handleMicToggle = async () => {
+    try {
+      await enableMic(!isMicEnabled);
+    } catch (error) {
+      console.error("Microphone toggle error:", error);
+    }
+  };
 
   // Handle typed message
   const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+    if (!inputValue.trim() || !isConnected) return;
 
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: `typed-${Date.now()}`,
       type: 'user',
       content: inputValue,
       timestamp: new Date(),
@@ -186,47 +209,32 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
     setMessages(prev => [...prev, userMessage]);
     const messageText = inputValue;
     setInputValue('');
-    setIsLoading(true);
 
-    // Trigger property search
-    if (onSearch) {
-      onSearch(messageText);
-    }
+    // Send message to Pipecat bot
+    try {
+      await pipecatClient.sendMessage({
+        type: 'user_message',
+        data: {
+          text: messageText
+        }
+      });
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'ai',
-        content: `I'm searching for properties based on: "${messageText}". Please check the main area for results. The search will include properties that match your criteria.`,
+      // Trigger search if callback provided
+      if (onSearch) {
+        onSearch(messageText);
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      
+      // Add error message
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        type: 'bot',
+        content: 'Sorry, I encountered an error processing your message. Please try again.',
         timestamp: new Date(),
         messageType: 'text'
       };
-      setMessages(prev => [...prev, aiMessage]);
-      setIsLoading(false);
-    }, 1000);
-  };
-
-  const handleMicToggle = () => {
-    if (!recognition) {
-      alert('Speech recognition is not supported in this browser.');
-      return;
-    }
-
-    if (isSpeechEnabled) {
-      // Stop speech recognition
-      recognition.stop();
-      setIsSpeechEnabled(false);
-      setIsListening(false);
-      setCurrentTranscript('');
-      if (speechTimeout) {
-        clearTimeout(speechTimeout);
-        setSpeechTimeout(null);
-      }
-    } else {
-      // Start speech recognition
-      setIsSpeechEnabled(true);
-      recognition.start();
+      setMessages(prev => [...prev, errorMessage]);
     }
   };
 
@@ -238,7 +246,7 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
   };
 
   const getMessageIcon = (message: ChatMessage) => {
-    if (message.messageType === 'transcription' && message.type === 'user') {
+    if (message.messageType === 'transcription') {
       return <Mic size={12} className="opacity-70" />;
     }
     return null;
@@ -248,7 +256,33 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
     if (message.type === 'user') {
       return message.messageType === 'transcription' ? 'You (Spoken)' : 'You (Typed)';
     }
-    return 'AI Assistant';
+    return message.messageType === 'transcription' ? 'AI Assistant (Voice)' : 'AI Assistant';
+  };
+
+  const getConnectionStatusColor = () => {
+    switch (transportState) {
+      case TransportState.Connected:
+        return 'bg-green-500';
+      case TransportState.Connecting:
+        return 'bg-yellow-500 animate-pulse';
+      case TransportState.Disconnected:
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-500';
+    }
+  };
+
+  const getConnectionStatusText = () => {
+    switch (transportState) {
+      case TransportState.Connected:
+        return 'Connected';
+      case TransportState.Connecting:
+        return 'Connecting...';
+      case TransportState.Disconnected:
+        return 'Disconnected';
+      default:
+        return 'Unknown';
+    }
   };
 
   return (
@@ -260,81 +294,111 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
             AI Property Assistant
           </div>
           <div className="flex items-center gap-2">
-            {isListening && (
-              <div className="flex items-center gap-1 text-primary">
-                <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-                <span className="text-xs">Listening</span>
+            {/* Connection status */}
+            <div className="flex items-center gap-1 text-xs">
+              <div className={`w-2 h-2 rounded-full ${getConnectionStatusColor()}`} />
+              <span>{getConnectionStatusText()}</span>
+            </div>
+            
+            {/* Mic status */}
+            {isConnected && (
+              <div className="flex items-center gap-1 text-xs">
+                <Mic className={`w-3 h-3 ${isMicEnabled ? 'text-primary' : 'text-muted-foreground'}`} />
+                <span>{isMicEnabled ? 'Mic On' : 'Mic Off'}</span>
               </div>
             )}
-            {currentTranscript && (
-              <div className="flex items-center gap-1 text-blue-500">
-                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                <span className="text-xs">Processing</span>
-              </div>
-            )}
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-muted'}`} />
           </div>
         </CardTitle>
         
         {/* Debug Info */}
         <div className="text-xs text-muted-foreground">
-          Messages: {messages.length} | Speech: {isSpeechEnabled ? 'On' : 'Off'} | Listening: {isListening ? 'Yes' : 'No'}
+          Transport: {transportState} | Mic: {isMicEnabled ? 'On' : 'Off'} | Messages: {messages.length}
         </div>
       </CardHeader>
       
       <CardContent className="flex-1 flex flex-col gap-3 p-3">
         <ScrollArea ref={scrollAreaRef} className="flex-1 pr-3">
           <div className="space-y-4">
-            {messages.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">
-                <p>Start speaking or type a message to begin!</p>
-                <p className="text-sm mt-2">The AI will help you find properties.</p>
-              </div>
-            ) : (
-              messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`flex gap-2 max-w-[85%] ${message.type === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                      message.type === 'user' ? 'bg-primary' : 'bg-accent'
-                    }`}>
-                      {message.type === 'user' ? (
-                        <User className="w-4 h-4 text-primary-foreground" />
-                      ) : (
-                        <Bot className="w-4 h-4 text-accent-foreground" />
-                      )}
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`flex gap-2 max-w-[85%] ${message.type === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                  <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                    message.type === 'user' ? 'bg-primary' : 'bg-accent'
+                  }`}>
+                    {message.type === 'user' ? (
+                      <User className="w-4 h-4 text-primary-foreground" />
+                    ) : (
+                      <Bot className="w-4 h-4 text-accent-foreground" />
+                    )}
+                  </div>
+                  
+                  <div className={`p-3 rounded-lg ${
+                    message.type === 'user' 
+                      ? 'bg-primary text-primary-foreground' 
+                      : 'bg-background border'
+                  }`}>
+                    <div className="flex items-center gap-1 mb-1">
+                      {getMessageIcon(message)}
+                      <span className="text-xs opacity-70 font-medium">
+                        {getMessageTypeLabel(message)}
+                      </span>
                     </div>
-                    
-                    <div className={`p-3 rounded-lg ${
-                      message.type === 'user' 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'bg-background border'
-                    }`}>
-                      <div className="flex items-center gap-1 mb-1">
-                        {getMessageIcon(message)}
-                        <span className="text-xs opacity-70 font-medium">
-                          {getMessageTypeLabel(message)}
-                        </span>
-                      </div>
-                      <p className="text-sm leading-relaxed">{message.content}</p>
-                      <div className="flex items-center gap-1 mt-2 opacity-70">
-                        <Clock className="w-3 h-3" />
-                        <span className="text-xs">
-                          {message.timestamp.toLocaleTimeString([], { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
-                          })}
-                        </span>
-                      </div>
+                    <p className="text-sm leading-relaxed">{message.content}</p>
+                    <div className="flex items-center gap-1 mt-2 opacity-70">
+                      <Clock className="w-3 h-3" />
+                      <span className="text-xs">
+                        {message.timestamp.toLocaleTimeString([], { 
+                          hour: '2-digit', 
+                          minute: '2-digit' 
+                        })}
+                      </span>
                     </div>
                   </div>
                 </div>
-              ))
+              </div>
+            ))}
+            
+            {/* Current user transcript (interim) */}
+            {currentUserTranscript && (
+              <div className="flex gap-3 justify-end">
+                <div className="flex gap-2 max-w-[85%] flex-row-reverse">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/50 flex items-center justify-center">
+                    <User className="w-4 h-4 text-primary-foreground" />
+                  </div>
+                  <div className="p-3 rounded-lg bg-primary/70 text-primary-foreground">
+                    <div className="flex items-center gap-1 mb-1">
+                      <Mic size={12} className="opacity-70 animate-pulse" />
+                      <span className="text-xs opacity-70 font-medium">You (Speaking...)</span>
+                    </div>
+                    <p className="text-sm leading-relaxed italic">{currentUserTranscript}</p>
+                  </div>
+                </div>
+              </div>
             )}
             
-            {isLoading && (
+            {/* Current bot transcript (interim) */}
+            {currentBotTranscript && (
+              <div className="flex gap-3 justify-start">
+                <div className="flex gap-2 max-w-[85%]">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent/50 flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-accent-foreground" />
+                  </div>
+                  <div className="p-3 rounded-lg bg-background/70 border">
+                    <div className="flex items-center gap-1 mb-1">
+                      <Mic size={12} className="opacity-70 animate-pulse" />
+                      <span className="text-xs opacity-70 font-medium">AI Assistant (Speaking...)</span>
+                    </div>
+                    <p className="text-sm leading-relaxed italic">{currentBotTranscript}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Loading indicator */}
+            {isLoading && !currentBotTranscript && (
               <div className="flex gap-3 justify-start">
                 <div className="flex gap-2">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent flex items-center justify-center">
@@ -353,28 +417,51 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
           </div>
         </ScrollArea>
         
-        {/* Voice Controls */}
+        {/* Voice and Connection Controls */}
         <div className="flex gap-2 justify-center">
           <Button
-            onClick={handleMicToggle}
-            variant={isSpeechEnabled ? "destructive" : "outline"}
+            onClick={handleConnectionToggle}
+            variant={isConnected ? "destructive" : "default"}
             size="sm"
             className="flex items-center gap-2"
+            disabled={isConnecting}
           >
-            {isSpeechEnabled ? (
+            {isConnected ? (
               <>
-                <MicOff className="w-4 h-4" />
-                Stop Listening
+                <PhoneOff className="w-4 h-4" />
+                Disconnect
               </>
             ) : (
               <>
-                <Mic className="w-4 h-4" />
-                Start Listening
+                <Phone className="w-4 h-4" />
+                {isConnecting ? 'Connecting...' : 'Connect'}
               </>
             )}
           </Button>
+          
+          {isConnected && (
+            <Button
+              onClick={handleMicToggle}
+              variant={isMicEnabled ? "destructive" : "outline"}
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              {isMicEnabled ? (
+                <>
+                  <MicOff className="w-4 h-4" />
+                  Mute Mic
+                </>
+              ) : (
+                <>
+                  <Mic className="w-4 h-4" />
+                  Enable Mic
+                </>
+              )}
+            </Button>
+          )}
         </div>
         
+        {/* Text Input */}
         <div className="flex gap-2">
           <Input
             value={inputValue}
@@ -382,11 +469,11 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
             onKeyPress={handleKeyPress}
             placeholder={isConnected ? "Type a message..." : "Connect to start chatting"}
             className="flex-1"
-            disabled={isLoading}
+            disabled={isLoading || !isConnected}
           />
           <Button 
             onClick={handleSendMessage}
-            disabled={!inputValue.trim() || isLoading}
+            disabled={!inputValue.trim() || isLoading || !isConnected}
             size="icon"
           >
             <Send className="w-4 h-4" />
@@ -394,31 +481,32 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
         </div>
         
         {/* Status indicator */}
-        {isConnected && (
-          <div className="mt-2 text-xs text-muted-foreground text-center">
-            {isLoading ? (
-              <span className="flex items-center justify-center gap-1">
-                <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                Processing your request...
-              </span>
-            ) : currentTranscript ? (
-              <span className="flex items-center justify-center gap-1">
-                <Mic size={12} className="animate-pulse" />
-                Speech processed - auto-sending message...
-              </span>
-            ) : isListening ? (
-              <span className="flex items-center justify-center gap-1">
-                <Mic size={12} className="animate-pulse" />
-                Listening for speech...
-              </span>
-            ) : isSpeechEnabled ? (
-              <span>Speech enabled - waiting for voice input</span>
-            ) : (
-              <span>Click microphone to enable voice input or type your message</span>
-            )}
-          </div>
-        )}
+        <div className="mt-2 text-xs text-muted-foreground text-center">
+          {!isConnected ? (
+            <span>Click "Connect" to start voice conversation</span>
+          ) : isLoading ? (
+            <span className="flex items-center justify-center gap-1">
+              <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              AI is responding...
+            </span>
+          ) : currentUserTranscript ? (
+            <span className="flex items-center justify-center gap-1">
+              <Mic size={12} className="animate-pulse" />
+              Listening to your speech...
+            </span>
+          ) : currentBotTranscript ? (
+            <span className="flex items-center justify-center gap-1">
+              <Bot size={12} className="animate-pulse" />
+              AI is speaking...
+            </span>
+          ) : isMicEnabled ? (
+            <span>🎤 Voice enabled - speak naturally or type your message</span>
+          ) : (
+            <span>Enable microphone for voice chat or type your message</span>
+          )}
+        </div>
         
+        {/* Quick action badges */}
         <div className="flex flex-wrap gap-1">
           <Badge 
             variant="outline" 
@@ -435,6 +523,14 @@ export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) 
           >
             <Search className="w-3 h-3 mr-1" />
             Under $500k
+          </Badge>
+          <Badge 
+            variant="outline" 
+            className="text-xs cursor-pointer hover:bg-muted"
+            onClick={() => setInputValue("Show me 3 bedroom homes")}
+          >
+            <Search className="w-3 h-3 mr-1" />
+            3 bedrooms
           </Badge>
         </div>
       </CardContent>
