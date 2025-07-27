@@ -1,7 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Bed, Bath, MapPin } from "lucide-react";
+import { ExternalLink, Bed, Bath, MapPin, ImageIcon } from "lucide-react";
+import { useState } from "react";
 
 interface Property {
   id: string;
@@ -32,6 +33,8 @@ interface PropertyCardProps {
 
 export function PropertyCard({ property }: PropertyCardProps) {
   const { details, metadata, url, images } = property;
+  const [imageLoading, setImageLoading] = useState(true);
+  const [imageError, setImageError] = useState(false);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -41,14 +44,49 @@ export function PropertyCard({ property }: PropertyCardProps) {
     }).format(price);
   };
 
+  const handleImageLoad = () => {
+    setImageLoading(false);
+  };
+
+  const handleImageError = () => {
+    setImageLoading(false);
+    setImageError(true);
+  };
+
   return (
     <Card className="group hover:shadow-[var(--shadow-property-hover)] transition-all duration-300 bg-property-card hover:bg-property-card-hover border-border">
       <div className="relative">
+        {/* Image Loading State */}
+        {imageLoading && (
+          <div className="w-full h-48 bg-muted rounded-t-lg flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2 text-muted-foreground">
+              <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+              <span className="text-xs">Loading image...</span>
+            </div>
+          </div>
+        )}
+        
+        {/* Image Error State */}
+        {imageError && (
+          <div className="w-full h-48 bg-muted rounded-t-lg flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2 text-muted-foreground">
+              <ImageIcon className="w-8 h-8" />
+              <span className="text-xs">Image unavailable</span>
+            </div>
+          </div>
+        )}
+
+        {/* Actual Image */}
         <img
           src={images.primary}
           alt={details.address}
-          className="w-full h-48 object-cover rounded-t-lg"
+          className={`w-full h-48 object-cover rounded-t-lg transition-opacity duration-200 ${
+            imageLoading || imageError ? 'opacity-0 absolute' : 'opacity-100'
+          }`}
+          onLoad={handleImageLoad}
+          onError={handleImageError}
         />
+
         <div className="absolute top-3 left-3 flex gap-2">
           <Badge 
             variant={metadata.status === 'active' ? 'default' : 'secondary'}
