@@ -73,7 +73,7 @@ export function Dashboard() {
     try {
       // Check if this is a property search result
       if (message?.type === 'property_search_results') {
-        console.log('📍 Received property search results:', message.);
+        console.log('📍 Received property search results:', message);
         setSearchResults(message);
         setSearchQuery(message.query); // Update search query from server
         setHasError(false);
