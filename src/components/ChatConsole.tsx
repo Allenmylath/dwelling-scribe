@@ -111,11 +111,6 @@ export function ChatConsole({
 
   // Helper function to add or update message
   const addOrUpdateMessage = (newMessage: Omit<ChatMessage, 'timestamp'>) => {
-    const messageWithTimestamp = {
-      ...newMessage,
-      timestamp: new Date()
-    };
-
     setMessages(prev => {
       const existingIndex = prev.findIndex(msg => 
         msg.threadId === newMessage.threadId && 
@@ -124,18 +119,28 @@ export function ChatConsole({
       );
 
       if (existingIndex !== -1 && newMessage.status === 'final') {
-        // Replace interim message with final one
+        // Replace interim message with final one, preserving original timestamp and position
         const updated = [...prev];
-        updated[existingIndex] = messageWithTimestamp;
-        return updated.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        updated[existingIndex] = {
+          ...newMessage,
+          timestamp: updated[existingIndex].timestamp, // Keep original timestamp
+        };
+        return updated; // No sorting - preserve order
       } else if (existingIndex !== -1 && newMessage.status === 'interim') {
-        // Update existing interim message
+        // Update existing interim message content only
         const updated = [...prev];
-        updated[existingIndex] = { ...updated[existingIndex], content: newMessage.content };
+        updated[existingIndex] = { 
+          ...updated[existingIndex], 
+          content: newMessage.content 
+        };
         return updated;
       } else {
-        // Add new message
-        return [...prev, messageWithTimestamp].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        // Add new message with current timestamp
+        const messageWithTimestamp = {
+          ...newMessage,
+          timestamp: new Date()
+        };
+        return [...prev, messageWithTimestamp]; // Append to end, no sorting
       }
     });
   };
@@ -146,6 +151,11 @@ export function ChatConsole({
     useCallback((transcript: any) => {
       console.log("👤 User transcript:", transcript);
       
+      // Only process final transcripts for user messages
+      if (!transcript.final) {
+        return;
+      }
+      
       if (!currentThreadId) {
         setCurrentThreadId(generateThreadId());
       }
@@ -153,21 +163,19 @@ export function ChatConsole({
       const threadId = currentThreadId || generateThreadId();
       
       const userMessage: Omit<ChatMessage, 'timestamp'> = {
-        id: transcript.final ? `user-final-${Date.now()}` : `user-interim-${threadId}`,
+        id: `user-final-${Date.now()}`,
         threadId,
         type: 'user',
         content: transcript.text,
         messageType: 'transcription',
-        status: transcript.final ? 'final' : 'interim'
+        status: 'final'
       };
       
       addOrUpdateMessage(userMessage);
       
-      if (transcript.final) {
-        // Trigger search if callback provided
-        if (onSearch && transcript.text.trim()) {
-          onSearch(transcript.text.trim());
-        }
+      // Trigger search if callback provided
+      if (onSearch && transcript.text.trim()) {
+        onSearch(transcript.text.trim());
       }
     }, [currentThreadId, onSearch])
   );
@@ -411,7 +419,7 @@ export function ChatConsole({
         
         {/* Debug Info */}
         <div className="text-xs text-muted-foreground">
-          Transport: {transportState} | Mic: {isMicEnabled ? 'On' : 'Off'} | Messages: {messages.length} | Thread: {currentThreadId?.slice(-6) || 'None'}
+          Transport: {transportState} | Mic: {isMicEnabled ? 'On' : 'Off'} | Messages: {messages.length} | Thread: {currentThreadId?.slice(-6) || 'None'} | Near Bottom: {isNearBottom ? 'Yes' : 'No'}
         </div>
       </CardHeader>
       
@@ -570,11 +578,6 @@ export function ChatConsole({
             <span className="flex items-center justify-center gap-1">
               <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               AI is responding...
-            </span>
-          ) : messages.some(m => m.status === 'interim' && m.type === 'user') ? (
-            <span className="flex items-center justify-center gap-1">
-              <Mic size={12} className="animate-pulse" />
-              Listening to your speech...
             </span>
           ) : messages.some(m => m.status === 'interim' && m.type === 'bot') ? (
             <span className="flex items-center justify-center gap-1">
