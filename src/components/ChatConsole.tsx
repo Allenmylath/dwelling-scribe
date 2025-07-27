@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Search, Clock } from "lucide-react";
+import { Send, Bot, User, Search, Clock, Mic, MicOff, Phone, PhoneOff } from "lucide-react";
 
 interface ChatMessage {
   id: string;
@@ -29,7 +29,42 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [recognition, setRecognition] = useState<any>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Initialize speech recognition
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognitionInstance = new SpeechRecognition();
+      
+      recognitionInstance.continuous = true;
+      recognitionInstance.interimResults = true;
+      recognitionInstance.lang = 'en-US';
+
+      recognitionInstance.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0])
+          .map((result: any) => result.transcript)
+          .join('');
+
+        setInputValue(transcript);
+      };
+
+      recognitionInstance.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionInstance.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      setRecognition(recognitionInstance);
+    }
+  }, []);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -67,6 +102,33 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
       setMessages(prev => [...prev, aiMessage]);
       setIsLoading(false);
     }, 1000);
+  };
+
+  const handleConnect = () => {
+    setIsConnected(!isConnected);
+    if (isConnected && isListening) {
+      // Stop listening when disconnecting
+      handleMicToggle();
+    }
+  };
+
+  const handleMicToggle = () => {
+    if (!recognition) {
+      alert('Speech recognition is not supported in this browser.');
+      return;
+    }
+
+    if (isListening) {
+      recognition.stop();
+      setIsListening(false);
+    } else {
+      if (!isConnected) {
+        alert('Please connect first before using the microphone.');
+        return;
+      }
+      recognition.start();
+      setIsListening(true);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -142,6 +204,48 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
             )}
           </div>
         </ScrollArea>
+        
+        {/* Voice Controls */}
+        <div className="flex gap-2 justify-center">
+          <Button
+            onClick={handleConnect}
+            variant={isConnected ? "destructive" : "default"}
+            size="sm"
+            className="flex items-center gap-2"
+          >
+            {isConnected ? (
+              <>
+                <PhoneOff className="w-4 h-4" />
+                Disconnect
+              </>
+            ) : (
+              <>
+                <Phone className="w-4 h-4" />
+                Connect
+              </>
+            )}
+          </Button>
+          
+          <Button
+            onClick={handleMicToggle}
+            variant={isListening ? "destructive" : "outline"}
+            size="sm"
+            disabled={!isConnected}
+            className="flex items-center gap-2"
+          >
+            {isListening ? (
+              <>
+                <MicOff className="w-4 h-4" />
+                Stop
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4" />
+                Listen
+              </>
+            )}
+          </Button>
+        </div>
         
         <div className="flex gap-2">
           <Input
