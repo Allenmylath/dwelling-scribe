@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Send, Bot, User, Search, Clock, Mic, MicOff, Phone, PhoneOff } from "lucide-react";
+import { Send, Bot, User, Search, Clock, Mic, MicOff } from "lucide-react";
 
 interface ChatMessage {
   id: string;
@@ -29,7 +29,6 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isConnected, setIsConnected] = useState(true);
   const [isListening, setIsListening] = useState(true);
   const [recognition, setRecognition] = useState<any>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -107,14 +106,6 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
     }, 1000);
   };
 
-  const handleConnect = () => {
-    setIsConnected(!isConnected);
-    if (isConnected && isListening) {
-      // Stop listening when disconnecting
-      handleMicToggle();
-    }
-  };
-
   const handleMicToggle = () => {
     if (!recognition) {
       alert('Speech recognition is not supported in this browser.');
@@ -125,10 +116,6 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
       recognition.stop();
       setIsListening(false);
     } else {
-      if (!isConnected) {
-        alert('Please connect first before using the microphone.');
-        return;
-      }
       recognition.start();
       setIsListening(true);
     }
@@ -211,40 +198,20 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
         {/* Voice Controls */}
         <div className="flex gap-2 justify-center">
           <Button
-            onClick={handleConnect}
-            variant={isConnected ? "destructive" : "default"}
-            size="sm"
-            className="flex items-center gap-2"
-          >
-            {isConnected ? (
-              <>
-                <PhoneOff className="w-4 h-4" />
-                Disconnect
-              </>
-            ) : (
-              <>
-                <Phone className="w-4 h-4" />
-                Connect
-              </>
-            )}
-          </Button>
-          
-          <Button
             onClick={handleMicToggle}
             variant={isListening ? "destructive" : "outline"}
             size="sm"
-            disabled={!isConnected}
             className="flex items-center gap-2"
           >
             {isListening ? (
               <>
                 <MicOff className="w-4 h-4" />
-                Stop
+                Stop Listening
               </>
             ) : (
               <>
                 <Mic className="w-4 h-4" />
-                Listen
+                Start Listening
               </>
             )}
           </Button>

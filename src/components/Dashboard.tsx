@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChatConsole } from "./ChatConsole";
 import { PropertySearchResults } from "./PropertySearchResults";
+import { ConnectButton } from "./ConnectButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Home, MessageSquare, TrendingUp, Users } from "lucide-react";
@@ -43,6 +44,7 @@ export function Dashboard() {
                 <TrendingUp className="w-3 h-3" />
                 Market Up 2.3%
               </Badge>
+              <ConnectButton />
             </div>
           </div>
         </div>
