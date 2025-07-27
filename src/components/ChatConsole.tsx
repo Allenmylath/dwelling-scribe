@@ -18,9 +18,10 @@ interface Message {
 
 interface ChatConsoleProps {
   isConnected?: boolean;
+  onSearch?: (query: string) => void;
 }
 
-export function ChatConsole({ isConnected = false }: ChatConsoleProps) {
+export function ChatConsole({ isConnected = false, onSearch }: ChatConsoleProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isListening, setIsListening] = useState(false);
