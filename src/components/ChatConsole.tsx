@@ -55,15 +55,27 @@ export function ChatConsole({
       if (scrollAreaRef.current) {
         const scrollElement = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
         if (scrollElement) {
+          // Force scroll to absolute bottom
           scrollElement.scrollTop = scrollElement.scrollHeight;
+          // Double-check with requestAnimationFrame for complex layouts
+          requestAnimationFrame(() => {
+            scrollElement.scrollTop = scrollElement.scrollHeight;
+          });
         }
       }
     };
 
-    // Use timeout to ensure DOM has updated
-    const timeoutId = setTimeout(scrollToBottom, 10);
-    return () => clearTimeout(timeoutId);
-  }, [messages]);
+    // Use multiple timeouts to ensure reliable scrolling
+    const timeoutId1 = setTimeout(scrollToBottom, 0);
+    const timeoutId2 = setTimeout(scrollToBottom, 50);
+    const timeoutId3 = setTimeout(scrollToBottom, 100);
+    
+    return () => {
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
+      clearTimeout(timeoutId3);
+    };
+  }, [messages, isLoading]);
 
   // Listen to user transcription events - FINAL ONLY
   useRTVIClientEvent(RTVIEvent.UserTranscript, useCallback((data: any) => {
