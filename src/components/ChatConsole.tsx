@@ -11,7 +11,7 @@ import {
   usePipecatClientMicControl,
   usePipecatClientTransportState 
 } from "@pipecat-ai/client-react";
-import { RTVIEvent, TransportState } from "@pipecat-ai/client-js";
+import { RTVIEvent } from "@pipecat-ai/client-js";
 
 interface ChatMessage {
   id: string;
@@ -51,8 +51,17 @@ export function ChatConsole({
   const { enableMic, isMicEnabled } = usePipecatClientMicControl();
   const transportState = usePipecatClientTransportState();
 
-  const isConnected = transportState === TransportState.Connected;
-  const isConnecting = transportState === TransportState.Connecting;
+  // Helper function to determine connected state (matching ConnectButton logic)
+  const isConnectedState = (state: string): boolean => {
+    return state === "connected" || state === "ready";
+  };
+
+  const isConnected = isConnectedState(transportState);
+  const isConnecting = transportState === "connecting" || 
+                      transportState === "initializing" || 
+                      transportState === "initialized" || 
+                      transportState === "authenticating" || 
+                      transportState === "authenticated";
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -159,7 +168,7 @@ export function ChatConsole({
   // Handle transport state changes
   useRTVIClientEvent(
     RTVIEvent.TransportStateChanged,
-    useCallback((state: TransportState) => {
+    useCallback((state: string) => {
       console.log("🔄 Transport state changed to:", state);
     }, [])
   );
@@ -210,13 +219,15 @@ export function ChatConsole({
     const messageText = inputValue;
     setInputValue('');
 
-    // Send message to Pipecat bot
+    // Send message to Pipecat bot using RTVI actions
     try {
-      await pipecatClient.sendMessage({
-        type: 'user_message',
-        data: {
-          text: messageText
-        }
+      // Send a text message action to the bot
+      await pipecatClient.action({
+        type: "tts_say",
+        arguments: [{
+          name: "text",
+          value: `User said: ${messageText}`
+        }]
       });
 
       // Trigger search if callback provided
@@ -260,29 +271,17 @@ export function ChatConsole({
   };
 
   const getConnectionStatusColor = () => {
-    switch (transportState) {
-      case TransportState.Connected:
-        return 'bg-green-500';
-      case TransportState.Connecting:
-        return 'bg-yellow-500 animate-pulse';
-      case TransportState.Disconnected:
-        return 'bg-red-500';
-      default:
-        return 'bg-gray-500';
-    }
+    if (isConnected) return 'bg-green-500';
+    if (isConnecting) return 'bg-yellow-500 animate-pulse';
+    if (transportState === "disconnected") return 'bg-red-500';
+    return 'bg-gray-500';
   };
 
   const getConnectionStatusText = () => {
-    switch (transportState) {
-      case TransportState.Connected:
-        return 'Connected';
-      case TransportState.Connecting:
-        return 'Connecting...';
-      case TransportState.Disconnected:
-        return 'Disconnected';
-      default:
-        return 'Unknown';
-    }
+    if (isConnected) return 'Connected';
+    if (isConnecting) return 'Connecting...';
+    if (transportState === "disconnected") return 'Disconnected';
+    return transportState || 'Unknown';
   };
 
   return (
