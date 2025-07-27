@@ -15,11 +15,12 @@ import { RTVIEvent, TransportState } from "@pipecat-ai/client-js";
 
 interface ChatMessage {
   id: string;
+  threadId: string; // For grouping related messages
   type: 'user' | 'bot';
   content: string;
   timestamp: Date;
   messageType: 'text' | 'transcription' | 'audio';
-  final?: boolean;
+  status: 'interim' | 'final';
 }
 
 interface ChatConsoleProps {
@@ -33,25 +34,30 @@ export function ChatConsole({
 }: ChatConsoleProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
-      id: '1',
+      id: 'welcome-1',
+      threadId: 'welcome',
       type: 'bot',
       content: 'Hello! I\'m your real estate assistant. I can help you search for properties. You can speak to me or type your questions!',
       timestamp: new Date(),
-      messageType: 'text'
+      messageType: 'text',
+      status: 'final'
     }
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [currentUserTranscript, setCurrentUserTranscript] = useState('');
-  const [currentBotTranscript, setBotCurrentTranscript] = useState('');
+  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
+  
+  // Refs for scrolling
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
 
   // Pipecat hooks
   const pipecatClient = usePipecatClient();
   const { enableMic, isMicEnabled } = usePipecatClientMicControl();
   const transportState = usePipecatClientTransportState();
 
-  // Helper function to determine connected state (matching ConnectButton logic)
+  // Helper function to determine connected state
   const isConnectedState = (state: TransportState): boolean => {
     return state === "connected" || state === "ready";
   };
@@ -63,15 +69,76 @@ export function ChatConsole({
                       transportState === "authenticating" || 
                       transportState === "authenticated";
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
+  // Generate unique thread ID
+  const generateThreadId = () => `thread-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  // Scroll to bottom function
+  const scrollToBottom = (smooth = true) => {
+    if (messagesEndRef.current && isNearBottom) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: smooth ? 'smooth' : 'auto',
+        block: 'end'
+      });
+    }
+  };
+
+  // Check if user is near bottom of scroll area
+  const handleScroll = useCallback(() => {
     if (scrollAreaRef.current) {
       const scrollElement = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
       if (scrollElement) {
-        scrollElement.scrollTop = scrollElement.scrollHeight;
+        const { scrollTop, scrollHeight, clientHeight } = scrollElement;
+        const threshold = 100; // pixels from bottom
+        setIsNearBottom(scrollHeight - scrollTop - clientHeight < threshold);
       }
     }
+  }, []);
+
+  // Auto-scroll when messages change
+  useEffect(() => {
+    const timer = setTimeout(() => scrollToBottom(), 100);
+    return () => clearTimeout(timer);
   }, [messages]);
+
+  // Add scroll listener
+  useEffect(() => {
+    const scrollElement = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (scrollElement) {
+      scrollElement.addEventListener('scroll', handleScroll);
+      return () => scrollElement.removeEventListener('scroll', handleScroll);
+    }
+  }, [handleScroll]);
+
+  // Helper function to add or update message
+  const addOrUpdateMessage = (newMessage: Omit<ChatMessage, 'timestamp'>) => {
+    const messageWithTimestamp = {
+      ...newMessage,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => {
+      const existingIndex = prev.findIndex(msg => 
+        msg.threadId === newMessage.threadId && 
+        msg.type === newMessage.type &&
+        msg.messageType === newMessage.messageType
+      );
+
+      if (existingIndex !== -1 && newMessage.status === 'final') {
+        // Replace interim message with final one
+        const updated = [...prev];
+        updated[existingIndex] = messageWithTimestamp;
+        return updated.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      } else if (existingIndex !== -1 && newMessage.status === 'interim') {
+        // Update existing interim message
+        const updated = [...prev];
+        updated[existingIndex] = { ...updated[existingIndex], content: newMessage.content };
+        return updated;
+      } else {
+        // Add new message
+        return [...prev, messageWithTimestamp].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+      }
+    });
+  };
 
   // Handle user speech transcription
   useRTVIClientEvent(
@@ -79,29 +146,30 @@ export function ChatConsole({
     useCallback((transcript: any) => {
       console.log("👤 User transcript:", transcript);
       
+      if (!currentThreadId) {
+        setCurrentThreadId(generateThreadId());
+      }
+
+      const threadId = currentThreadId || generateThreadId();
+      
+      const userMessage: Omit<ChatMessage, 'timestamp'> = {
+        id: transcript.final ? `user-final-${Date.now()}` : `user-interim-${threadId}`,
+        threadId,
+        type: 'user',
+        content: transcript.text,
+        messageType: 'transcription',
+        status: transcript.final ? 'final' : 'interim'
+      };
+      
+      addOrUpdateMessage(userMessage);
+      
       if (transcript.final) {
-        // Add final user message
-        const userMessage: ChatMessage = {
-          id: `user-${Date.now()}`,
-          type: 'user',
-          content: transcript.text,
-          timestamp: new Date(),
-          messageType: 'transcription',
-          final: true
-        };
-        
-        setMessages(prev => [...prev, userMessage]);
-        setCurrentUserTranscript('');
-        
         // Trigger search if callback provided
         if (onSearch && transcript.text.trim()) {
           onSearch(transcript.text.trim());
         }
-      } else {
-        // Show interim transcript
-        setCurrentUserTranscript(transcript.text);
       }
-    }, [onSearch])
+    }, [currentThreadId, onSearch])
   );
 
   // Handle bot speech transcription
@@ -110,25 +178,28 @@ export function ChatConsole({
     useCallback((transcript: any) => {
       console.log("🤖 Bot transcript:", transcript);
       
-      if (transcript.final) {
-        // Add final bot message
-        const botMessage: ChatMessage = {
-          id: `bot-${Date.now()}`,
-          type: 'bot',
-          content: transcript.text,
-          timestamp: new Date(),
-          messageType: 'transcription',
-          final: true
-        };
-        
-        setMessages(prev => [...prev, botMessage]);
-        setBotCurrentTranscript('');
-        setIsLoading(false);
-      } else {
-        // Show interim transcript
-        setBotCurrentTranscript(transcript.text);
+      if (!currentThreadId) {
+        setCurrentThreadId(generateThreadId());
       }
-    }, [])
+
+      const threadId = currentThreadId || generateThreadId();
+      
+      const botMessage: Omit<ChatMessage, 'timestamp'> = {
+        id: transcript.final ? `bot-final-${Date.now()}` : `bot-interim-${threadId}`,
+        threadId,
+        type: 'bot',
+        content: transcript.text,
+        messageType: 'transcription',
+        status: transcript.final ? 'final' : 'interim'
+      };
+      
+      addOrUpdateMessage(botMessage);
+      
+      if (transcript.final) {
+        setIsLoading(false);
+        setCurrentThreadId(null); // Reset for next conversation
+      }
+    }, [currentThreadId])
   );
 
   // Handle bot started speaking
@@ -154,7 +225,10 @@ export function ChatConsole({
     RTVIEvent.UserStartedSpeaking,
     useCallback(() => {
       console.log("👤 User started speaking");
-    }, [])
+      if (!currentThreadId) {
+        setCurrentThreadId(generateThreadId());
+      }
+    }, [currentThreadId])
   );
 
   // Handle user stopped speaking
@@ -178,6 +252,7 @@ export function ChatConsole({
     try {
       if (isConnected) {
         await pipecatClient?.disconnect();
+        setCurrentThreadId(null);
       } else {
         setIsLoading(true);
         await pipecatClient?.connect({
@@ -205,54 +280,67 @@ export function ChatConsole({
 
   // Handle typed message
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || !isConnected) return;
+    if (!inputValue.trim()) return;
 
-    const userMessage: ChatMessage = {
+    const threadId = generateThreadId();
+    const userMessage: Omit<ChatMessage, 'timestamp'> = {
       id: `typed-${Date.now()}`,
+      threadId,
       type: 'user',
       content: inputValue,
-      timestamp: new Date(),
-      messageType: 'text'
+      messageType: 'text',
+      status: 'final'
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    addOrUpdateMessage(userMessage);
     const messageText = inputValue;
     setInputValue('');
 
-    // For typed messages, we'll add them to the conversation
-    // The voice transcription will be handled automatically by Pipecat
-    // when the user speaks, so we don't need to send additional actions
     try {
       // Trigger search if callback provided
       if (onSearch) {
         onSearch(messageText);
       }
       
-      // Since this is a typed message for property search, we simulate a response
-      // The real AI conversation happens through voice when connected
-      setTimeout(() => {
-        const botMessage: ChatMessage = {
-          id: `bot-typed-${Date.now()}`,
-          type: 'bot',
-          content: `I'll help you search for properties: "${messageText}". For a full AI conversation experience, please use the voice feature by connecting and speaking naturally.`,
-          timestamp: new Date(),
-          messageType: 'text'
-        };
-        setMessages(prev => [...prev, botMessage]);
-      }, 1000);
+      // Simulate bot response for typed messages
+      if (isConnected) {
+        setTimeout(() => {
+          const botMessage: Omit<ChatMessage, 'timestamp'> = {
+            id: `bot-typed-${Date.now()}`,
+            threadId,
+            type: 'bot',
+            content: `I'll help you search for properties: "${messageText}". For a full AI conversation experience, please use the voice feature by speaking naturally.`,
+            messageType: 'text',
+            status: 'final'
+          };
+          addOrUpdateMessage(botMessage);
+        }, 1000);
+      } else {
+        setTimeout(() => {
+          const botMessage: Omit<ChatMessage, 'timestamp'> = {
+            id: `bot-typed-${Date.now()}`,
+            threadId,
+            type: 'bot',
+            content: `I received your message: "${messageText}". Please connect to start the AI conversation.`,
+            messageType: 'text',
+            status: 'final'
+          };
+          addOrUpdateMessage(botMessage);
+        }, 500);
+      }
       
     } catch (error) {
       console.error("Error processing message:", error);
       
-      // Add error message
-      const errorMessage: ChatMessage = {
+      const errorMessage: Omit<ChatMessage, 'timestamp'> = {
         id: `error-${Date.now()}`,
+        threadId,
         type: 'bot',
         content: 'Sorry, I encountered an error processing your message. Please try again.',
-        timestamp: new Date(),
-        messageType: 'text'
+        messageType: 'text',
+        status: 'final'
       };
-      setMessages(prev => [...prev, errorMessage]);
+      addOrUpdateMessage(errorMessage);
     }
   };
 
@@ -265,16 +353,21 @@ export function ChatConsole({
 
   const getMessageIcon = (message: ChatMessage) => {
     if (message.messageType === 'transcription') {
-      return <Mic size={12} className="opacity-70" />;
+      return <Mic size={12} className={`opacity-70 ${message.status === 'interim' ? 'animate-pulse' : ''}`} />;
     }
     return null;
   };
 
   const getMessageTypeLabel = (message: ChatMessage) => {
+    const statusText = message.status === 'interim' ? '...' : '';
     if (message.type === 'user') {
-      return message.messageType === 'transcription' ? 'You (Spoken)' : 'You (Typed)';
+      return message.messageType === 'transcription' 
+        ? `You (${message.status === 'interim' ? 'Speaking' : 'Spoken'})${statusText}`
+        : 'You (Typed)';
     }
-    return message.messageType === 'transcription' ? 'AI Assistant (Voice)' : 'AI Assistant';
+    return message.messageType === 'transcription' 
+      ? `AI Assistant (${message.status === 'interim' ? 'Speaking' : 'Voice'})${statusText}`
+      : 'AI Assistant';
   };
 
   const getConnectionStatusColor = () => {
@@ -318,7 +411,7 @@ export function ChatConsole({
         
         {/* Debug Info */}
         <div className="text-xs text-muted-foreground">
-          Transport: {transportState} | Mic: {isMicEnabled ? 'On' : 'Off'} | Messages: {messages.length}
+          Transport: {transportState} | Mic: {isMicEnabled ? 'On' : 'Off'} | Messages: {messages.length} | Thread: {currentThreadId?.slice(-6) || 'None'}
         </div>
       </CardHeader>
       
@@ -333,7 +426,7 @@ export function ChatConsole({
                 <div className={`flex gap-2 max-w-[85%] ${message.type === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                   <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
                     message.type === 'user' ? 'bg-primary' : 'bg-accent'
-                  }`}>
+                  } ${message.status === 'interim' ? 'opacity-70' : 'opacity-100'}`}>
                     {message.type === 'user' ? (
                       <User className="w-4 h-4 text-primary-foreground" />
                     ) : (
@@ -343,8 +436,8 @@ export function ChatConsole({
                   
                   <div className={`p-3 rounded-lg ${
                     message.type === 'user' 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'bg-background border'
+                      ? `bg-primary text-primary-foreground ${message.status === 'interim' ? 'opacity-70' : 'opacity-100'}` 
+                      : `bg-background border ${message.status === 'interim' ? 'opacity-70 border-dashed' : 'opacity-100'}`
                   }`}>
                     <div className="flex items-center gap-1 mb-1">
                       {getMessageIcon(message)}
@@ -352,7 +445,9 @@ export function ChatConsole({
                         {getMessageTypeLabel(message)}
                       </span>
                     </div>
-                    <p className="text-sm leading-relaxed">{message.content}</p>
+                    <p className={`text-sm leading-relaxed ${message.status === 'interim' ? 'italic' : ''}`}>
+                      {message.content}
+                    </p>
                     <div className="flex items-center gap-1 mt-2 opacity-70">
                       <Clock className="w-3 h-3" />
                       <span className="text-xs">
@@ -367,44 +462,8 @@ export function ChatConsole({
               </div>
             ))}
             
-            {/* Current user transcript (interim) */}
-            {currentUserTranscript && (
-              <div className="flex gap-3 justify-end">
-                <div className="flex gap-2 max-w-[85%] flex-row-reverse">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/50 flex items-center justify-center">
-                    <User className="w-4 h-4 text-primary-foreground" />
-                  </div>
-                  <div className="p-3 rounded-lg bg-primary/70 text-primary-foreground">
-                    <div className="flex items-center gap-1 mb-1">
-                      <Mic size={12} className="opacity-70 animate-pulse" />
-                      <span className="text-xs opacity-70 font-medium">You (Speaking...)</span>
-                    </div>
-                    <p className="text-sm leading-relaxed italic">{currentUserTranscript}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Current bot transcript (interim) */}
-            {currentBotTranscript && (
-              <div className="flex gap-3 justify-start">
-                <div className="flex gap-2 max-w-[85%]">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent/50 flex items-center justify-center">
-                    <Bot className="w-4 h-4 text-accent-foreground" />
-                  </div>
-                  <div className="p-3 rounded-lg bg-background/70 border">
-                    <div className="flex items-center gap-1 mb-1">
-                      <Mic size={12} className="opacity-70 animate-pulse" />
-                      <span className="text-xs opacity-70 font-medium">AI Assistant (Speaking...)</span>
-                    </div>
-                    <p className="text-sm leading-relaxed italic">{currentBotTranscript}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
             {/* Loading indicator */}
-            {isLoading && !currentBotTranscript && (
+            {isLoading && !messages.some(m => m.status === 'interim' && m.type === 'bot') && (
               <div className="flex gap-3 justify-start">
                 <div className="flex gap-2">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent flex items-center justify-center">
@@ -420,8 +479,25 @@ export function ChatConsole({
                 </div>
               </div>
             )}
+            
+            {/* Invisible element for scrolling */}
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
+        
+        {/* Scroll to bottom button */}
+        {!isNearBottom && (
+          <div className="flex justify-center">
+            <Button
+              onClick={() => scrollToBottom()}
+              variant="outline"
+              size="sm"
+              className="text-xs"
+            >
+              Scroll to bottom
+            </Button>
+          </div>
+        )}
         
         {/* Voice and Connection Controls */}
         <div className="flex gap-2 justify-center">
@@ -475,11 +551,11 @@ export function ChatConsole({
             onKeyPress={handleKeyPress}
             placeholder={isConnected ? "Type a message..." : "Connect to start chatting"}
             className="flex-1"
-            disabled={isLoading || !isConnected}
+            disabled={isLoading}
           />
           <Button 
             onClick={handleSendMessage}
-            disabled={!inputValue.trim() || isLoading || !isConnected}
+            disabled={!inputValue.trim() || isLoading}
             size="icon"
           >
             <Send className="w-4 h-4" />
@@ -490,17 +566,17 @@ export function ChatConsole({
         <div className="mt-2 text-xs text-muted-foreground text-center">
           {!isConnected ? (
             <span>Click "Connect" to start voice conversation with AI</span>
-          ) : isLoading ? (
+          ) : isLoading && !messages.some(m => m.status === 'interim') ? (
             <span className="flex items-center justify-center gap-1">
               <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
               AI is responding...
             </span>
-          ) : currentUserTranscript ? (
+          ) : messages.some(m => m.status === 'interim' && m.type === 'user') ? (
             <span className="flex items-center justify-center gap-1">
               <Mic size={12} className="animate-pulse" />
               Listening to your speech...
             </span>
-          ) : currentBotTranscript ? (
+          ) : messages.some(m => m.status === 'interim' && m.type === 'bot') ? (
             <span className="flex items-center justify-center gap-1">
               <Bot size={12} className="animate-pulse" />
               AI is speaking...
