@@ -29,8 +29,8 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isListening, setIsListening] = useState(false);
+  const [isConnected, setIsConnected] = useState(true);
+  const [isListening, setIsListening] = useState(true);
   const [recognition, setRecognition] = useState<any>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -63,6 +63,9 @@ export function ChatConsole({ onSearch }: ChatConsoleProps) {
       };
 
       setRecognition(recognitionInstance);
+      
+      // Auto-start listening since microphone is on by default
+      recognitionInstance.start();
     }
   }, []);
 
