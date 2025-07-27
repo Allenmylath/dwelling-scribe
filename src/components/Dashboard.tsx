@@ -13,42 +13,45 @@ import { TransportState } from "@pipecat-ai/client-js";
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isConnected, setIsConnected] = useState(false);
   
   // Pipecat hooks for status display
   const transportState = usePipecatClientTransportState();
   const { isMicEnabled } = usePipecatClientMicControl();
   
-  const isConnected = transportState === TransportState.Connected;
-  const isConnecting = transportState === TransportState.Connecting;
+  // Helper function to determine connected state (matching your ConnectButton logic)
+  const isConnectedState = (state: TransportState): boolean => {
+    return state === "connected" || state === "ready";
+  };
+  
+  const connected = isConnectedState(transportState);
+  const isConnecting = transportState === "connecting" || 
+                      transportState === "initializing" || 
+                      transportState === "initialized" || 
+                      transportState === "authenticating" || 
+                      transportState === "authenticated";
+
+  // Handle connection state changes from ConnectButton
+  const handleConnectionChange = (connectionState: boolean) => {
+    setIsConnected(connectionState);
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
   };
 
   const getConnectionStatusText = () => {
-    switch (transportState) {
-      case TransportState.Connected:
-        return "Connected";
-      case TransportState.Connecting:
-        return "Connecting...";
-      case TransportState.Disconnected:
-        return "Disconnected";
-      default:
-        return "Unknown";
-    }
+    if (connected) return "Connected";
+    if (isConnecting) return "Connecting...";
+    if (transportState === "disconnected") return "Disconnected";
+    return transportState || "Unknown";
   };
 
   const getConnectionStatusColor = () => {
-    switch (transportState) {
-      case TransportState.Connected:
-        return "text-green-600 bg-green-50";
-      case TransportState.Connecting:
-        return "text-yellow-600 bg-yellow-50";
-      case TransportState.Disconnected:
-        return "text-red-600 bg-red-50";
-      default:
-        return "text-gray-600 bg-gray-50";
-    }
+    if (connected) return "text-green-600 bg-green-50 border-green-200";
+    if (isConnecting) return "text-yellow-600 bg-yellow-50 border-yellow-200";
+    if (transportState === "disconnected") return "text-red-600 bg-red-50 border-red-200";
+    return "text-gray-600 bg-gray-50 border-gray-200";
   };
 
   return (
@@ -75,18 +78,18 @@ export function Dashboard() {
                   className={`flex items-center gap-1 ${getConnectionStatusColor()}`}
                 >
                   <div className={`w-2 h-2 rounded-full ${
-                    isConnected ? 'bg-green-500' : 
+                    connected ? 'bg-green-500' : 
                     isConnecting ? 'bg-yellow-500 animate-pulse' : 
                     'bg-red-500'
                   }`} />
                   {getConnectionStatusText()}
                 </Badge>
                 
-                {isConnected && (
+                {connected && (
                   <Badge 
                     variant="outline" 
                     className={`flex items-center gap-1 ${
-                      isMicEnabled ? 'text-blue-600 bg-blue-50' : 'text-gray-600 bg-gray-50'
+                      isMicEnabled ? 'text-blue-600 bg-blue-50 border-blue-200' : 'text-gray-600 bg-gray-50 border-gray-200'
                     }`}
                   >
                     {isMicEnabled ? (
@@ -121,7 +124,7 @@ export function Dashboard() {
                 Market Up 2.3%
               </Badge>
               
-              <ConnectionButton />
+              <ConnectionButton onConnectionChange={handleConnectionChange} />
             </div>
           </div>
           
@@ -132,7 +135,7 @@ export function Dashboard() {
                 <Badge variant="secondary" className="text-sm">
                   Current Search: "{searchQuery}"
                 </Badge>
-                {isConnected && (
+                {connected && (
                   <Badge variant="outline" className="text-xs">
                     <MessageSquare className="w-3 h-3 mr-1" />
                     Voice Search Active
@@ -156,7 +159,7 @@ export function Dashboard() {
           <div className="lg:col-span-1">
             <ChatConsole 
               onSearch={handleSearch}
-              pipecatEndpoint={process.env.REACT_APP_PIPECAT_ENDPOINT || "/api/connect"} 
+              pipecatEndpoint={import.meta.env.VITE_PIPECAT_API_URL || "https://manjujayamurali--pipecat-modal-fastapi-app.modal.run"}
             />
           </div>
         </div>
