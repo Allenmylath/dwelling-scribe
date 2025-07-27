@@ -63,12 +63,18 @@ export function ChatConsole({
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (scrollAreaRef.current) {
-      const scrollElement = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
-      if (scrollElement) {
-        scrollElement.scrollTop = scrollElement.scrollHeight;
+    const scrollToBottom = () => {
+      if (scrollAreaRef.current) {
+        const scrollElement = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+        if (scrollElement) {
+          scrollElement.scrollTop = scrollElement.scrollHeight;
+        }
       }
-    }
+    };
+
+    // Use timeout to ensure DOM has updated
+    const timeoutId = setTimeout(scrollToBottom, 10);
+    return () => clearTimeout(timeoutId);
   }, [messages]);
 
   // Listen to user transcription events - FINAL ONLY
