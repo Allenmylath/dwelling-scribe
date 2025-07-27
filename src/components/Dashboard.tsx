@@ -74,11 +74,11 @@ export function Dashboard() {
       // Check if this is a property search result
       if (message?.type === 'property_search_results') {
         console.log('📍 Received property search results:', message.data);
-        setSearchResults(message.data);
-        setSearchQuery(message.data.query); // Update search query from server
+        setSearchResults(message);
+        setSearchQuery(message.query); // Update search query from server
         setHasError(false);
       } else if (message?.type === 'property_search_error') {
-        console.error('❌ Property search error:', message.data.error);
+        console.error('❌ Property search error:', message.error);
         setHasError(true);
         setSearchResults(null);
       }
