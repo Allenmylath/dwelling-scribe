@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { PipecatClientProvider } from "@pipecat-ai/client-react";
+import { PipecatClientProvider, PipecatClientAudio } from "@pipecat-ai/client-react";
 import { PipecatClient } from "@pipecat-ai/client-js";
 import { DailyTransport } from "@pipecat-ai/daily-transport";
 import Index from "./pages/Index";
@@ -11,9 +11,32 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
-// Create Pipecat client with Daily transport
+// Create Pipecat client with enhanced configuration
 const pipecatClient = new PipecatClient({
   transport: new DailyTransport(),
+  enableMic: true,        // Enable microphone by default
+  enableCam: false,       // Disable camera for voice-only chat
+  // Optional: Add more configuration
+  config: {
+    // Add any RTVI configuration here
+    voice: {
+      model: "sonic-multilingual",  // Example voice model
+      language: "en"
+    }
+  }
+});
+
+// Optional: Add global event listeners
+pipecatClient.on('connected', () => {
+  console.log('✅ Pipecat client connected');
+});
+
+pipecatClient.on('disconnected', () => {
+  console.log('❌ Pipecat client disconnected');
+});
+
+pipecatClient.on('error', (error) => {
+  console.error('🚨 Pipecat client error:', error);
 });
 
 const App = () => (
@@ -22,6 +45,8 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        {/* Add PipecatClientAudio for bot audio playback */}
+        <PipecatClientAudio />
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
