@@ -98,7 +98,7 @@ export function ConnectionButton({ onConnectionChange }: ConnectionButtonProps) 
         requestData: {
           // This matches the ConnectData model in the backend
           services: {
-            llm: "gemini", 
+            llm: "openai", 
             tts: "cartesia",
           },
         },
