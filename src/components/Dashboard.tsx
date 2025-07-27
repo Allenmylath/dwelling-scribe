@@ -7,17 +7,86 @@ import { Badge } from "@/components/ui/badge";
 import { Home, MessageSquare, TrendingUp, Users, Mic, MicOff } from "lucide-react";
 import { 
   usePipecatClientTransportState, 
-  usePipecatClientMicControl 
+  usePipecatClientMicControl,
+  useRTVIClientEvent
 } from "@pipecat-ai/client-react";
-import { TransportState } from "@pipecat-ai/client-js";
+import { TransportState, RTVIEvent } from "@pipecat-ai/client-js";
+
+interface SearchResultData {
+  type: string;
+  timestamp: number;
+  search_id: string;
+  query: string;
+  summary: {
+    total_found: number;
+    showing: number;
+    execution_time: number;
+    search_type: string;
+  };
+  filters_applied: {
+    min_price: number | null;
+    max_price: number | null;
+    bedrooms: number | null;
+    bathrooms: number | null;
+    property_type: string | null;
+    location_keywords: string | null;
+    mls_genuine: boolean | null;
+  };
+  properties: Array<{
+    id: string;
+    url: string;
+    images: {
+      primary: string;
+      all: string[];
+    };
+    details: {
+      address: string;
+      price: number;
+      currency: string;
+      bedrooms: string;
+      bathrooms: string;
+      type: string;
+      description: string;
+    };
+    metadata: {
+      search_score: number;
+      mls_genuine: boolean;
+      status: string;
+    };
+  }>;
+}
 
 export function Dashboard() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isConnected, setIsConnected] = useState(false);
   
+  // RTVI property search state
+  const [searchResults, setSearchResults] = useState<SearchResultData | null>(null);
+  const [hasError, setHasError] = useState(false);
+  
   // Pipecat hooks for status display
   const transportState = usePipecatClientTransportState();
   const { isMicEnabled } = usePipecatClientMicControl();
+  
+  // Listen for RTVI server messages
+  useRTVIClientEvent(RTVIEvent.ServerMessage, (message: any) => {
+    try {
+      // Check if this is a property search result
+      if (message?.data?.type === 'property_search_results') {
+        console.log('📍 Received property search results:', message.data);
+        setSearchResults(message.data);
+        setSearchQuery(message.data.query); // Update search query from server
+        setHasError(false);
+      } else if (message?.data?.type === 'property_search_error') {
+        console.error('❌ Property search error:', message.data.error);
+        setHasError(true);
+        setSearchResults(null);
+      }
+    } catch (error) {
+      console.error('🚨 Error processing server message:', error);
+      setHasError(true);
+    }
+  });
   
   // Helper function to determine connected state (matching your ConnectButton logic)
   const isConnectedState = (state: TransportState): boolean => {
@@ -52,6 +121,15 @@ export function Dashboard() {
     if (isConnecting) return "text-yellow-600 bg-yellow-50 border-yellow-200";
     if (transportState === "disconnected") return "text-red-600 bg-red-50 border-red-200";
     return "text-gray-600 bg-gray-50 border-gray-200";
+  };
+
+  // Dynamic stats based on search results
+  const getActiveListings = () => {
+    return searchResults?.summary?.total_found || 1247;
+  };
+
+  const getNewToday = () => {
+    return searchResults ? Math.floor(searchResults.summary.total_found * 0.1) : 89;
   };
 
   return (
@@ -107,15 +185,19 @@ export function Dashboard() {
                 )}
               </div>
 
-              {/* Stats */}
+              {/* Dynamic Stats */}
               <div className="flex items-center gap-3">
                 <div className="text-center">
-                  <div className="text-lg font-semibold text-primary">1,247</div>
-                  <div className="text-xs text-muted-foreground">Active Listings</div>
+                  <div className="text-lg font-semibold text-primary">{getActiveListings().toLocaleString()}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {searchResults ? 'Found Properties' : 'Active Listings'}
+                  </div>
                 </div>
                 <div className="text-center">
-                  <div className="text-lg font-semibold text-accent">89</div>
-                  <div className="text-xs text-muted-foreground">New Today</div>
+                  <div className="text-lg font-semibold text-accent">{getNewToday()}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {searchResults ? 'High Score' : 'New Today'}
+                  </div>
                 </div>
               </div>
               
@@ -141,6 +223,11 @@ export function Dashboard() {
                     Voice Search Active
                   </Badge>
                 )}
+                {searchResults && (
+                  <Badge variant="outline" className="text-xs">
+                    🎯 {searchResults.summary.execution_time}s search time
+                  </Badge>
+                )}
               </div>
             </div>
           )}
@@ -152,7 +239,10 @@ export function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-140px)]">
           {/* Main Content Area */}
           <div className="lg:col-span-3 overflow-auto">
-            <PropertySearchResults searchQuery={searchQuery} />
+            <PropertySearchResults 
+              searchResults={searchResults} 
+              hasError={hasError} 
+            />
           </div>
 
           {/* Chat Console */}
