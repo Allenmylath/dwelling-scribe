@@ -4,8 +4,10 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { PipecatClientProvider, PipecatClientAudio } from "@pipecat-ai/client-react";
-import { PipecatClient } from "@pipecat-ai/client-js";
+import { PipecatClient, RTVIEvent } from "@pipecat-ai/client-js";
 import { DailyTransport } from "@pipecat-ai/daily-transport";
+import { useRTVIClientEvent } from "@pipecat-ai/client-react";
+import { useState } from "react";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 
@@ -31,6 +33,88 @@ pipecatClient.on('error', (error) => {
   console.error('🚨 Pipecat client error:', error);
 });
 
+// Property search results state management
+interface SearchResultData {
+  type: string;
+  timestamp: number;
+  search_id: string;
+  query: string;
+  summary: {
+    total_found: number;
+    showing: number;
+    execution_time: number;
+    search_type: string;
+  };
+  filters_applied: {
+    min_price: number | null;
+    max_price: number | null;
+    bedrooms: number | null;
+    bathrooms: number | null;
+    property_type: string | null;
+    location_keywords: string | null;
+    mls_genuine: boolean | null;
+  };
+  properties: Array<{
+    id: string;
+    url: string;
+    images: {
+      primary: string;
+      all: string[];
+    };
+    details: {
+      address: string;
+      price: number;
+      currency: string;
+      bedrooms: string;
+      bathrooms: string;
+      type: string;
+      description: string;
+    };
+    metadata: {
+      search_score: number;
+      mls_genuine: boolean;
+      status: string;
+    };
+  }>;
+}
+
+const AppContent = () => {
+  const [searchResults, setSearchResults] = useState<SearchResultData | null>(null);
+  const [hasError, setHasError] = useState(false);
+
+  // Listen for RTVI server messages
+  useRTVIClientEvent(RTVIEvent.ServerMessage, (message: any) => {
+    try {
+      // Check if this is a property search result
+      if (message?.data?.type === 'property_search_results') {
+        console.log('📍 Received property search results:', message.data);
+        setSearchResults(message.data);
+        setHasError(false);
+      } else if (message?.data?.type === 'property_search_error') {
+        console.error('❌ Property search error:', message.data.error);
+        setHasError(true);
+        setSearchResults(null);
+      }
+    } catch (error) {
+      console.error('🚨 Error processing server message:', error);
+      setHasError(true);
+    }
+  });
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route 
+          path="/" 
+          element={<Index searchResults={searchResults} hasError={hasError} />} 
+        />
+        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <PipecatClientProvider client={pipecatClient}>
@@ -39,13 +123,7 @@ const App = () => (
         <Sonner />
         {/* Add PipecatClientAudio for bot audio playback */}
         <PipecatClientAudio />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
+        <AppContent />
       </TooltipProvider>
     </PipecatClientProvider>
   </QueryClientProvider>
