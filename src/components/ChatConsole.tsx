@@ -1,34 +1,43 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import { Card } from "@/components/ui/card";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Mic, MicOff } from "lucide-react";
-import { usePipecatClient, useRTVIClientEvent } from "@pipecat-ai/client-react";
-import { RTVIEvent } from "@pipecat-ai/client-js";
+import { Badge } from "@/components/ui/badge";
+import { Send, Bot, User, Search, Clock, Mic, MicOff } from "lucide-react";
 
-interface Message {
+interface ChatMessage {
   id: string;
-  text: string;
+  type: 'user' | 'ai';
+  content: string;
   timestamp: Date;
-  isOwn: boolean;
-  type: 'text' | 'transcription';
+  messageType: 'text' | 'transcription';
   final?: boolean;
 }
 
 interface ChatConsoleProps {
-  isConnected?: boolean;
   onSearch?: (query: string) => void;
+  isConnected?: boolean;
 }
 
-export function ChatConsole({ isConnected = false, onSearch }: ChatConsoleProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState("");
+export function ChatConsole({ onSearch, isConnected = true }: ChatConsoleProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      type: 'ai',
+      content: 'Hello! I\'m your real estate assistant. I can help you search for properties. Try asking me something like "Find me a house with good fencing" or "Show me properties under $500,000".',
+      timestamp: new Date(),
+      messageType: 'text'
+    }
+  ]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isSpeechEnabled, setIsSpeechEnabled] = useState(false);
+  const [recognition, setRecognition] = useState<any>(null);
+  const [currentTranscript, setCurrentTranscript] = useState('');
+  const [speechTimeout, setSpeechTimeout] = useState<NodeJS.Timeout | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  
-  const pipecatClient = usePipecatClient();
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -40,179 +49,216 @@ export function ChatConsole({ isConnected = false, onSearch }: ChatConsoleProps)
     }
   }, [messages]);
 
-  // Listen to user transcription events (what the user says) - FINAL ONLY
-  useRTVIClientEvent(
-    RTVIEvent.UserTranscript,
-    useCallback((data: any) => {
-      console.log("🎤 User transcription event:", JSON.stringify(data, null, 2));
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      const recognitionInstance = new SpeechRecognition();
       
-      const transcriptText = data?.text || data?.data?.text || "";
-      const isFinal = data?.final ?? data?.data?.final ?? false;
-      const timestamp = data?.timestamp || data?.data?.timestamp || Date.now();
-      
-      console.log("Parsed transcript:", { transcriptText, isFinal, timestamp });
-      
-      // Only process final transcripts
-      if (isFinal && transcriptText && transcriptText.trim()) {
-        console.log("✅ Adding final user transcript:", transcriptText);
-        const message: Message = {
-          id: `user-transcript-${Date.now()}-${Math.random()}`,
-          text: transcriptText.trim(),
-          timestamp: new Date(timestamp),
-          isOwn: true,
-          type: 'transcription',
-          final: true
-        };
-        setMessages(prev => {
-          console.log("Messages before adding user transcript:", prev.length);
-          const newMessages = [...prev, message];
-          console.log("Messages after adding user transcript:", newMessages.length);
-          return newMessages;
-        });
-      }
-    }, [])
-  );
+      recognitionInstance.continuous = true;
+      recognitionInstance.interimResults = true;
+      recognitionInstance.lang = 'en-US';
 
-  // Listen to bot transcription (what the bot says)
-  useRTVIClientEvent(
-    RTVIEvent.BotTranscript,
-    useCallback((data: any) => {
-      console.log("🤖 Bot transcription event:", JSON.stringify(data, null, 2));
-      
-      const transcriptText = data?.text || data?.data?.text || "";
-      
-      console.log("Parsed bot transcript:", transcriptText);
-      
-      // Only add if there's actual text content
-      if (transcriptText && transcriptText.trim()) {
-        console.log("✅ Adding bot transcript:", transcriptText);
-        const message: Message = {
-          id: `bot-transcript-${Date.now()}-${Math.random()}`,
-          text: transcriptText.trim(),
-          timestamp: new Date(),
-          isOwn: false,
-          type: 'transcription'
-        };
-        
-        setMessages(prev => {
-          console.log("Messages before adding bot transcript:", prev.length);
-          const newMessages = [...prev, message];
-          console.log("Messages after adding bot transcript:", newMessages.length);
-          return newMessages;
-        });
-      }
-    }, [])
-  );
-
-  // Listen to user started/stopped speaking
-  useRTVIClientEvent(
-    RTVIEvent.UserStartedSpeaking,
-    useCallback(() => {
-      console.log("🎙️ User started speaking");
-      setIsListening(true);
-    }, [])
-  );
-
-  useRTVIClientEvent(
-    RTVIEvent.UserStoppedSpeaking,
-    useCallback(() => {
-      console.log("🔇 User stopped speaking");
-      setIsListening(false);
-    }, [])
-  );
-
-  // Send text message through Pipecat
-  const handleSendMessage = useCallback(async () => {
-    if (!newMessage.trim() || !isConnected || !pipecatClient) return;
-
-    const messageText = newMessage.trim();
-    
-    // Clear the input immediately to allow new typing
-    setNewMessage("");
-
-    try {
-      // Add the user's typed message to the chat immediately
-      const userMessage: Message = {
-        id: `user-text-${Date.now()}`,
-        text: messageText,
-        timestamp: new Date(),
-        isOwn: true,
-        type: 'text'
+      recognitionInstance.onstart = () => {
+        console.log("🎙️ Speech recognition started");
+        setIsListening(true);
       };
-      
-      setMessages(prev => [...prev, userMessage]);
-      
-      // Send message to the bot through Pipecat (fire and forget)
-      console.log("📤 Sending typed message to bot:", messageText);
-      
-      pipecatClient.appendToContext({
-        role: "user",
-        content: messageText,
-        run_immediately: true
-      }).catch((error) => {
-        console.error("❌ appendToContext failed:", error);
-        
-        // Show error message to user only if it actually fails
-        const errorMessage: Message = {
-          id: `error-${Date.now()}`,
-          text: "Failed to send message. Please try again.",
-          timestamp: new Date(),
-          isOwn: false,
-          type: 'text'
-        };
-        setMessages(prev => [...prev, errorMessage]);
-      });
-      
-    } catch (error) {
-      console.error("❌ Failed to process message:", error);
-      
-      // Show error message to user
-      const errorMessage: Message = {
-        id: `error-${Date.now()}`,
-        text: "Failed to process message. Please try again.",
-        timestamp: new Date(),
-        isOwn: false,
-        type: 'text'
+
+      recognitionInstance.onresult = (event: any) => {
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Update current transcript for display (but don't show interim)
+        if (finalTranscript) {
+          console.log("✅ Final transcript received:", finalTranscript);
+          setCurrentTranscript(finalTranscript.trim());
+          
+          // Clear any existing timeout
+          if (speechTimeout) {
+            clearTimeout(speechTimeout);
+          }
+          
+          // Set a timeout to auto-send the message after speech stops
+          const timeout = setTimeout(() => {
+            handleSpeechMessage(finalTranscript.trim());
+          }, 1500); // Wait 1.5 seconds after final transcript
+          
+          setSpeechTimeout(timeout);
+        }
       };
-      setMessages(prev => [...prev, errorMessage]);
+
+      recognitionInstance.onend = () => {
+        console.log("🔇 Speech recognition ended");
+        setIsListening(false);
+        
+        // If we were listening and speech was enabled, restart
+        if (isSpeechEnabled) {
+          setTimeout(() => {
+            if (isSpeechEnabled) {
+              recognitionInstance.start();
+            }
+          }, 100);
+        }
+      };
+
+      recognitionInstance.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        
+        // Don't restart on permission errors
+        if (event.error === 'not-allowed') {
+          setIsSpeechEnabled(false);
+          alert('Microphone permission denied. Please enable microphone access and try again.');
+        }
+      };
+
+      setRecognition(recognitionInstance);
     }
-  }, [newMessage, isConnected, pipecatClient]);
+  }, [speechTimeout, isSpeechEnabled]);
+
+  // Handle speech message (auto-send when speech is complete)
+  const handleSpeechMessage = useCallback(async (transcript: string) => {
+    if (!transcript.trim()) return;
+
+    console.log("📤 Auto-sending speech message:", transcript);
+    
+    // Clear current transcript
+    setCurrentTranscript('');
+    
+    // Clear timeout
+    if (speechTimeout) {
+      clearTimeout(speechTimeout);
+      setSpeechTimeout(null);
+    }
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: transcript,
+      timestamp: new Date(),
+      messageType: 'transcription',
+      final: true
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+
+    // Trigger property search
+    if (onSearch) {
+      onSearch(transcript);
+    }
+
+    // Simulate AI response
+    setTimeout(() => {
+      const aiMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai',
+        content: `I'm searching for properties based on: "${transcript}". Please check the main area for results. The search will include properties that match your criteria.`,
+        timestamp: new Date(),
+        messageType: 'text'
+      };
+      setMessages(prev => [...prev, aiMessage]);
+      setIsLoading(false);
+    }, 1000);
+  }, [onSearch, speechTimeout]);
+
+  // Handle typed message
+  const handleSendMessage = async () => {
+    if (!inputValue.trim()) return;
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: inputValue,
+      timestamp: new Date(),
+      messageType: 'text'
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    const messageText = inputValue;
+    setInputValue('');
+    setIsLoading(true);
+
+    // Trigger property search
+    if (onSearch) {
+      onSearch(messageText);
+    }
+
+    // Simulate AI response
+    setTimeout(() => {
+      const aiMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'ai',
+        content: `I'm searching for properties based on: "${messageText}". Please check the main area for results. The search will include properties that match your criteria.`,
+        timestamp: new Date(),
+        messageType: 'text'
+      };
+      setMessages(prev => [...prev, aiMessage]);
+      setIsLoading(false);
+    }, 1000);
+  };
+
+  const handleMicToggle = () => {
+    if (!recognition) {
+      alert('Speech recognition is not supported in this browser.');
+      return;
+    }
+
+    if (isSpeechEnabled) {
+      // Stop speech recognition
+      recognition.stop();
+      setIsSpeechEnabled(false);
+      setIsListening(false);
+      setCurrentTranscript('');
+      if (speechTimeout) {
+        clearTimeout(speechTimeout);
+        setSpeechTimeout(null);
+      }
+    } else {
+      // Start speech recognition
+      setIsSpeechEnabled(true);
+      recognition.start();
+    }
+  };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
   };
 
-  const getMessageIcon = (message: Message) => {
-    if (message.type === 'transcription' && message.isOwn) {
+  const getMessageIcon = (message: ChatMessage) => {
+    if (message.messageType === 'transcription' && message.type === 'user') {
       return <Mic size={12} className="opacity-70" />;
     }
     return null;
   };
 
-  const getMessageTypeLabel = (message: Message) => {
-    if (message.type === 'transcription') {
-      return message.isOwn ? 'You (Spoken)' : 'Bot Response';
+  const getMessageTypeLabel = (message: ChatMessage) => {
+    if (message.type === 'user') {
+      return message.messageType === 'transcription' ? 'You (Spoken)' : 'You (Typed)';
     }
-    return message.isOwn ? 'You (Typed)' : 'Bot';
+    return 'AI Assistant';
   };
 
-  // Debug info
-  useEffect(() => {
-    console.log("💬 Current messages count:", messages.length);
-    console.log("👂 Is listening:", isListening);
-    console.log("🔗 Is connected:", isConnected);
-    console.log("📤 Is sending message:", isSendingMessage);
-  }, [messages, isListening, isConnected, isSendingMessage]);
-
   return (
-    <Card className="w-80 bg-gradient-card border-border/50 shadow-card flex flex-col h-full">
-      {/* Chat Header */}
-      <div className="p-4 border-b border-border/50">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-foreground">Chat</h3>
+    <Card className="h-full flex flex-col bg-chat-background">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bot className="w-5 h-5 text-primary" />
+            AI Property Assistant
+          </div>
           <div className="flex items-center gap-2">
             {isListening && (
               <div className="flex items-center gap-1 text-primary">
@@ -220,113 +266,178 @@ export function ChatConsole({ isConnected = false, onSearch }: ChatConsoleProps)
                 <span className="text-xs">Listening</span>
               </div>
             )}
-            {isSendingMessage && (
+            {currentTranscript && (
               <div className="flex items-center gap-1 text-blue-500">
                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
-                <span className="text-xs">Sending</span>
+                <span className="text-xs">Processing</span>
               </div>
             )}
-            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success animate-pulse-glow' : 'bg-muted'}`} />
+            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-muted'}`} />
           </div>
-        </div>
+        </CardTitle>
         
         {/* Debug Info */}
-        <div className="text-xs text-muted-foreground mt-2">
-          Messages: {messages.length} | Listening: {isListening ? 'Yes' : 'No'}
+        <div className="text-xs text-muted-foreground">
+          Messages: {messages.length} | Speech: {isSpeechEnabled ? 'On' : 'Off'} | Listening: {isListening ? 'Yes' : 'No'}
         </div>
-      </div>
+      </CardHeader>
       
-      {/* Messages Area */}
-      <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-        <div className="space-y-4">
-          {messages.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8">
-              {isConnected ? (
-                <>
-                  <p>Connected! Start speaking or type a message.</p>
-                  <p className="text-sm mt-2">The AI will respond in real-time.</p>
-                  <p className="text-xs mt-1 opacity-60">Final transcripts only - no interim display</p>
-                </>
-              ) : (
-                <>
-                  <p>Connect to start chatting</p>
-                  <p className="text-sm">AI-powered conversation awaits!</p>
-                </>
-              )}
-            </div>
-          ) : (
-            messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.isOwn ? 'justify-end' : 'justify-start'}`}
-              >
+      <CardContent className="flex-1 flex flex-col gap-3 p-3">
+        <ScrollArea ref={scrollAreaRef} className="flex-1 pr-3">
+          <div className="space-y-4">
+            {messages.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                <p>Start speaking or type a message to begin!</p>
+                <p className="text-sm mt-2">The AI will help you find properties.</p>
+              </div>
+            ) : (
+              messages.map((message) => (
                 <div
-                  className={`max-w-[85%] p-3 rounded-lg shadow-sm animate-fade-in ${
-                    message.isOwn
-                      ? 'bg-gradient-button text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground'
-                  }`}
+                  key={message.id}
+                  className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  <div className="flex items-center gap-1 mb-1">
-                    {getMessageIcon(message)}
-                    <span className="text-xs opacity-70 font-medium">
-                      {getMessageTypeLabel(message)}
-                    </span>
+                  <div className={`flex gap-2 max-w-[85%] ${message.type === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                      message.type === 'user' ? 'bg-primary' : 'bg-accent'
+                    }`}>
+                      {message.type === 'user' ? (
+                        <User className="w-4 h-4 text-primary-foreground" />
+                      ) : (
+                        <Bot className="w-4 h-4 text-accent-foreground" />
+                      )}
+                    </div>
+                    
+                    <div className={`p-3 rounded-lg ${
+                      message.type === 'user' 
+                        ? 'bg-primary text-primary-foreground' 
+                        : 'bg-background border'
+                    }`}>
+                      <div className="flex items-center gap-1 mb-1">
+                        {getMessageIcon(message)}
+                        <span className="text-xs opacity-70 font-medium">
+                          {getMessageTypeLabel(message)}
+                        </span>
+                      </div>
+                      <p className="text-sm leading-relaxed">{message.content}</p>
+                      <div className="flex items-center gap-1 mt-2 opacity-70">
+                        <Clock className="w-3 h-3" />
+                        <span className="text-xs">
+                          {message.timestamp.toLocaleTimeString([], { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-sm leading-relaxed">{message.text}</p>
-                  <p className="text-xs opacity-70 mt-1">
-                    {message.timestamp.toLocaleTimeString([], { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
-                    })}
-                  </p>
+                </div>
+              ))
+            )}
+            
+            {isLoading && (
+              <div className="flex gap-3 justify-start">
+                <div className="flex gap-2">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-accent flex items-center justify-center">
+                    <Bot className="w-4 h-4 text-accent-foreground" />
+                  </div>
+                  <div className="p-3 rounded-lg bg-background border">
+                    <div className="flex gap-1">
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse"></div>
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                      <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            ))
-          )}
-        </div>
-      </ScrollArea>
-      
-      {/* Message Input */}
-      <div className="p-4 border-t border-border/50">
-        <div className="flex gap-2">
-          <Input
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder={isConnected ? "Type a message..." : "Connect to start chatting"}
-            disabled={!isConnected || isSendingMessage}
-            className="flex-1 bg-background/50 border-border/50 focus:border-primary/50"
-          />
+            )}
+          </div>
+        </ScrollArea>
+        
+        {/* Voice Controls */}
+        <div className="flex gap-2 justify-center">
           <Button
-            onClick={handleSendMessage}
-            disabled={!newMessage.trim() || !isConnected || isSendingMessage}
-            size="icon"
-            variant="connect"
-            className="rounded-full"
+            onClick={handleMicToggle}
+            variant={isSpeechEnabled ? "destructive" : "outline"}
+            size="sm"
+            className="flex items-center gap-2"
           >
-            <Send size={16} />
+            {isSpeechEnabled ? (
+              <>
+                <MicOff className="w-4 h-4" />
+                Stop Listening
+              </>
+            ) : (
+              <>
+                <Mic className="w-4 h-4" />
+                Start Listening
+              </>
+            )}
           </Button>
         </div>
         
+        <div className="flex gap-2">
+          <Input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder={isConnected ? "Type a message..." : "Connect to start chatting"}
+            className="flex-1"
+            disabled={isLoading}
+          />
+          <Button 
+            onClick={handleSendMessage}
+            disabled={!inputValue.trim() || isLoading}
+            size="icon"
+          >
+            <Send className="w-4 h-4" />
+          </Button>
+        </div>
+        
+        {/* Status indicator */}
         {isConnected && (
           <div className="mt-2 text-xs text-muted-foreground text-center">
-            {isSendingMessage ? (
+            {isLoading ? (
               <span className="flex items-center justify-center gap-1">
                 <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                Sending message to bot...
+                Processing your request...
+              </span>
+            ) : currentTranscript ? (
+              <span className="flex items-center justify-center gap-1">
+                <Mic size={12} className="animate-pulse" />
+                Speech processed - auto-sending message...
               </span>
             ) : isListening ? (
               <span className="flex items-center justify-center gap-1">
                 <Mic size={12} className="animate-pulse" />
-                Voice detected - processing final transcript
+                Listening for speech...
               </span>
+            ) : isSpeechEnabled ? (
+              <span>Speech enabled - waiting for voice input</span>
             ) : (
-              <span>Speak naturally or type your message</span>
+              <span>Click microphone to enable voice input or type your message</span>
             )}
           </div>
         )}
-      </div>
+        
+        <div className="flex flex-wrap gap-1">
+          <Badge 
+            variant="outline" 
+            className="text-xs cursor-pointer hover:bg-muted"
+            onClick={() => setInputValue("Find me a house with good fencing")}
+          >
+            <Search className="w-3 h-3 mr-1" />
+            Good fencing
+          </Badge>
+          <Badge 
+            variant="outline" 
+            className="text-xs cursor-pointer hover:bg-muted"
+            onClick={() => setInputValue("Properties under $500,000")}
+          >
+            <Search className="w-3 h-3 mr-1" />
+            Under $500k
+          </Badge>
+        </div>
+      </CardContent>
     </Card>
   );
 }
