@@ -67,22 +67,17 @@ export function Dashboard() {
   // Pipecat hooks for status display
   const transportState = usePipecatClientTransportState();
   const { isMicEnabled } = usePipecatClientMicControl();
-  Object.values(RTVIEvent).forEach(eventType => {
-  useRTVIClientEvent(eventType as any, (data: any) => {
-    console.log(`📡 RTVI Event [${eventType}]:`, data);
-  });
-});
   
   // Listen for RTVI server messages
   useRTVIClientEvent(RTVIEvent.ServerMessage, (message: any) => {
     try {
       // Check if this is a property search result
-      if (message?.data?.type === 'property_search_results') {
+      if (message?.type === 'property_search_results') {
         console.log('📍 Received property search results:', message.data);
         setSearchResults(message.data);
         setSearchQuery(message.data.query); // Update search query from server
         setHasError(false);
-      } else if (message?.data?.type === 'property_search_error') {
+      } else if (message?.type === 'property_search_error') {
         console.error('❌ Property search error:', message.data.error);
         setHasError(true);
         setSearchResults(null);
