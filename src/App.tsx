@@ -16,14 +16,6 @@ const pipecatClient = new PipecatClient({
   transport: new DailyTransport(),
   enableMic: true,        // Enable microphone by default
   enableCam: false,       // Disable camera for voice-only chat
-  // Optional: Add more configuration
-  config: {
-    // Add any RTVI configuration here
-    voice: {
-      model: "sonic-multilingual",  // Example voice model
-      language: "en"
-    }
-  }
 });
 
 // Optional: Add global event listeners
