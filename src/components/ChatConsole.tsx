@@ -11,7 +11,7 @@ import {
   usePipecatClientMicControl,
   usePipecatClientTransportState 
 } from "@pipecat-ai/client-react";
-import { RTVIEvent } from "@pipecat-ai/client-js";
+import { RTVIEvent, TransportState } from "@pipecat-ai/client-js";
 
 interface ChatMessage {
   id: string;
@@ -52,7 +52,7 @@ export function ChatConsole({
   const transportState = usePipecatClientTransportState();
 
   // Helper function to determine connected state (matching ConnectButton logic)
-  const isConnectedState = (state: string): boolean => {
+  const isConnectedState = (state: TransportState): boolean => {
     return state === "connected" || state === "ready";
   };
 
@@ -168,7 +168,7 @@ export function ChatConsole({
   // Handle transport state changes
   useRTVIClientEvent(
     RTVIEvent.TransportStateChanged,
-    useCallback((state: string) => {
+    useCallback((state: TransportState) => {
       console.log("🔄 Transport state changed to:", state);
     }, [])
   );
@@ -177,10 +177,10 @@ export function ChatConsole({
   const handleConnectionToggle = async () => {
     try {
       if (isConnected) {
-        await pipecatClient.disconnect();
+        await pipecatClient?.disconnect();
       } else {
         setIsLoading(true);
-        await pipecatClient.connect({
+        await pipecatClient?.connect({
           endpoint: pipecatEndpoint,
           requestData: {
             // Add any custom data your endpoint needs
@@ -219,23 +219,30 @@ export function ChatConsole({
     const messageText = inputValue;
     setInputValue('');
 
-    // Send message to Pipecat bot using RTVI actions
+    // For typed messages, we'll add them to the conversation
+    // The voice transcription will be handled automatically by Pipecat
+    // when the user speaks, so we don't need to send additional actions
     try {
-      // Send a text message action to the bot
-      await pipecatClient.action({
-        type: "tts_say",
-        arguments: [{
-          name: "text",
-          value: `User said: ${messageText}`
-        }]
-      });
-
       // Trigger search if callback provided
       if (onSearch) {
         onSearch(messageText);
       }
+      
+      // Since this is a typed message for property search, we simulate a response
+      // The real AI conversation happens through voice when connected
+      setTimeout(() => {
+        const botMessage: ChatMessage = {
+          id: `bot-typed-${Date.now()}`,
+          type: 'bot',
+          content: `I'll help you search for properties: "${messageText}". For a full AI conversation experience, please use the voice feature by connecting and speaking naturally.`,
+          timestamp: new Date(),
+          messageType: 'text'
+        };
+        setMessages(prev => [...prev, botMessage]);
+      }, 1000);
+      
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error("Error processing message:", error);
       
       // Add error message
       const errorMessage: ChatMessage = {
@@ -482,7 +489,7 @@ export function ChatConsole({
         {/* Status indicator */}
         <div className="mt-2 text-xs text-muted-foreground text-center">
           {!isConnected ? (
-            <span>Click "Connect" to start voice conversation</span>
+            <span>Click "Connect" to start voice conversation with AI</span>
           ) : isLoading ? (
             <span className="flex items-center justify-center gap-1">
               <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -499,9 +506,9 @@ export function ChatConsole({
               AI is speaking...
             </span>
           ) : isMicEnabled ? (
-            <span>🎤 Voice enabled - speak naturally or type your message</span>
+            <span>🎤 Voice enabled - speak naturally for AI conversation</span>
           ) : (
-            <span>Enable microphone for voice chat or type your message</span>
+            <span>Enable microphone for voice chat or type to search properties</span>
           )}
         </div>
         
