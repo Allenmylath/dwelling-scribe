@@ -67,6 +67,11 @@ export function Dashboard() {
   // Pipecat hooks for status display
   const transportState = usePipecatClientTransportState();
   const { isMicEnabled } = usePipecatClientMicControl();
+  Object.values(RTVIEvent).forEach(eventType => {
+  useRTVIClientEvent(eventType as any, (data: any) => {
+    console.log(`📡 RTVI Event [${eventType}]:`, data);
+  });
+});
   
   // Listen for RTVI server messages
   useRTVIClientEvent(RTVIEvent.ServerMessage, (message: any) => {
