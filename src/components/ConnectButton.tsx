@@ -1,3 +1,4 @@
+// Updated ConnectionButton.tsx - Simplified transport state logic
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Phone, PhoneOff } from "lucide-react";
