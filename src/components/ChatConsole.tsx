@@ -276,7 +276,7 @@ export function ChatConsole({
     if (transportState === "disconnected") return 'Disconnected';
     return transportState || 'Unknown';
   };
-  return <Card className="h-[600px] flex flex-col bg-chat-background">
+  return <Card className="h-[50vh] md:h-[60vh] lg:h-[70vh] flex flex-col bg-chat-background">
       <CardHeader className="pb-3 flex-shrink-0">
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2">
