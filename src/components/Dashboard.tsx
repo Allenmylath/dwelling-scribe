@@ -249,7 +249,7 @@ export function Dashboard() {
           <div className="lg:col-span-1">
             <ChatConsole 
               onSearch={handleSearch}
-              pipecatEndpoint={import.meta.env.VITE_PIPECAT_API_URL || "https://manjujayamurali--pipecat-modal-fastapi-app.modal.run"}
+              pipecatEndpoint={import.meta.env.VITE_PIPECAT_API_URL || "https://manjujayamurali--pipecat-modal-fastapi-app.modal.run/connect"}
             />
           </div>
         </div>
