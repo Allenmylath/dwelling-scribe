@@ -1,3 +1,4 @@
+// Updated Dashboard.tsx - Simplified transport state logic
 import { useState } from "react";
 import { ChatConsole } from "./ChatConsole";
 import { PropertySearchResults } from "./PropertySearchResults";
@@ -71,11 +72,10 @@ export function Dashboard() {
   // Listen for RTVI server messages
   useRTVIClientEvent(RTVIEvent.ServerMessage, (message: any) => {
     try {
-      // Check if this is a property search result
       if (message?.type === 'property_search_results') {
         console.log('📍 Received property search results:', message);
         setSearchResults(message);
-        setSearchQuery(message.query); // Update search query from server
+        setSearchQuery(message.query);
         setHasError(false);
       } else if (message?.type === 'property_search_error') {
         console.error('❌ Property search error:', message.error);
@@ -88,17 +88,15 @@ export function Dashboard() {
     }
   });
   
-  // Helper function to determine connected state (matching your ConnectButton logic)
-  const isConnectedState = (state: TransportState): boolean => {
-    return state === "connected" || state === "ready";
-  };
-  
-  const connected = isConnectedState(transportState);
+  // ✅ SIMPLIFIED: Direct transport state checks
+  const connected = transportState === "connected" || transportState === "ready";
   const isConnecting = transportState === "connecting" || 
                       transportState === "initializing" || 
                       transportState === "initialized" || 
                       transportState === "authenticating" || 
                       transportState === "authenticated";
+  const isDisconnected = transportState === "disconnected";
+  const hasConnectionError = transportState === "error";
 
   // Handle connection state changes from ConnectButton
   const handleConnectionChange = (connectionState: boolean) => {
@@ -109,17 +107,20 @@ export function Dashboard() {
     setSearchQuery(query);
   };
 
+  // ✅ SIMPLIFIED: Direct status functions using transport state
   const getConnectionStatusText = () => {
     if (connected) return "Connected";
     if (isConnecting) return "Connecting...";
-    if (transportState === "disconnected") return "Disconnected";
+    if (hasConnectionError) return "Error";
+    if (isDisconnected) return "Disconnected";
     return transportState || "Unknown";
   };
 
   const getConnectionStatusColor = () => {
     if (connected) return "text-green-600 bg-green-50 border-green-200";
     if (isConnecting) return "text-yellow-600 bg-yellow-50 border-yellow-200";
-    if (transportState === "disconnected") return "text-red-600 bg-red-50 border-red-200";
+    if (hasConnectionError) return "text-red-600 bg-red-50 border-red-200";
+    if (isDisconnected) return "text-red-600 bg-red-50 border-red-200";
     return "text-gray-600 bg-gray-50 border-gray-200";
   };
 
@@ -158,6 +159,7 @@ export function Dashboard() {
                   <div className={`w-2 h-2 rounded-full ${
                     connected ? 'bg-green-500' : 
                     isConnecting ? 'bg-yellow-500 animate-pulse' : 
+                    hasConnectionError ? 'bg-red-500 animate-pulse' :
                     'bg-red-500'
                   }`} />
                   {getConnectionStatusText()}
