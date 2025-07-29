@@ -98,7 +98,7 @@ export function ConnectionButton({ onConnectionChange }: ConnectionButtonProps) 
       setIsConnecting(true);
       
       await pipecatClient.connect({
-        endpoint: `${import.meta.env.VITE_PIPECAT_API_URL || "https://manjujayamurali--secondbrain-realestate-fastapi-app.modal.run/connect"}`,
+        endpoint: `${import.meta.env.VITE_PIPECAT_API_URL || "https://manjujayamurali--secondbrain-realestate-fastapi-app.modal.run/"}`,
         requestData: {
           services: {
             llm: "openai", 
