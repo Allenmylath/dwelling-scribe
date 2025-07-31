@@ -32,7 +32,7 @@ interface SearchResultData {
     property_type: string | null;
     location_keywords: string | null;
     mls_genuine: boolean | null;
-    ai_raw_analysis: string | null
+    ai_analysis_raw: string | null
   };
   properties: Array<{
     id: string;
