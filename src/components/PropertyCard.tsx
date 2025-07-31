@@ -37,6 +37,7 @@ export function PropertyCard({ property, aiAnalysis }: PropertyCardProps) {
   const { details, metadata, url, images } = property;
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -145,9 +146,21 @@ export function PropertyCard({ property, aiAnalysis }: PropertyCardProps) {
           </Badge>
         </div>
         
-        <p className="text-sm text-muted-foreground line-clamp-2">
-          {details.description}
-        </p>
+        <div className="mb-3">
+          <p className={`text-sm text-muted-foreground ${
+            isDescriptionExpanded ? '' : 'line-clamp-2'
+          }`}>
+            {details.description}
+          </p>
+          {details.description && details.description.length > 100 && (
+            <button
+              onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+              className="text-xs text-primary hover:underline mt-1"
+            >
+              {isDescriptionExpanded ? 'Read less' : 'Read more'}
+            </button>
+          )}
+        </div>
         
         <div className="flex justify-end mt-3">
           <Dialog>
