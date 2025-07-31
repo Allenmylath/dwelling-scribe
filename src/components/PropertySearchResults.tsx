@@ -41,6 +41,7 @@ interface SearchResultData {
       bathrooms: string;
       type: string;
       description: string;
+      ai_analysis_raw?: string;
     };
     metadata: {
       search_score: number;
@@ -148,7 +149,7 @@ export function PropertySearchResults({ searchResults, hasError }: PropertySearc
           <PropertyCard 
             key={property.id} 
             property={property} 
-            aiAnalysis={data.filters_applied.ai_analysis_raw}
+            aiAnalysis={property.details.ai_analysis_raw}
           />
         ))}
       </div>
