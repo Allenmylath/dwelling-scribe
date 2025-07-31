@@ -30,9 +30,10 @@ interface Property {
 
 interface PropertyCardProps {
   property: Property;
+  aiAnalysis?: string | null;
 }
 
-export function PropertyCard({ property }: PropertyCardProps) {
+export function PropertyCard({ property, aiAnalysis }: PropertyCardProps) {
   const { details, metadata, url, images } = property;
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
@@ -155,11 +156,15 @@ export function PropertyCard({ property }: PropertyCardProps) {
                 <Key className="w-4 h-4" />
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Thank You</DialogTitle>
+                <DialogTitle>AI Property Analysis</DialogTitle>
               </DialogHeader>
-              <p className="text-muted-foreground">Thank you for your interest in this property!</p>
+              <div className="max-h-96 overflow-y-auto">
+                <p className="text-sm whitespace-pre-wrap">
+                  {aiAnalysis || "No AI analysis available for this property."}
+                </p>
+              </div>
             </DialogContent>
           </Dialog>
         </div>

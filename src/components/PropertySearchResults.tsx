@@ -145,7 +145,11 @@ export function PropertySearchResults({ searchResults, hasError }: PropertySearc
       {/* Properties Grid */}
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         {propertiesShown.map((property) => (
-          <PropertyCard key={property.id} property={property} />
+          <PropertyCard 
+            key={property.id} 
+            property={property} 
+            aiAnalysis={data.filters_applied.ai_analysis_raw}
+          />
         ))}
       </div>
 
