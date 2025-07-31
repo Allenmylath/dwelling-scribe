@@ -1,7 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ExternalLink, Bed, Bath, MapPin, ImageIcon } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ExternalLink, Bed, Bath, MapPin, ImageIcon, Key } from "lucide-react";
 import { useState } from "react";
 
 interface Property {
@@ -146,6 +147,22 @@ export function PropertyCard({ property }: PropertyCardProps) {
         <p className="text-sm text-muted-foreground line-clamp-2">
           {details.description}
         </p>
+        
+        <div className="flex justify-end mt-3">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0">
+                <Key className="w-4 h-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Thank You</DialogTitle>
+              </DialogHeader>
+              <p className="text-muted-foreground">Thank you for your interest in this property!</p>
+            </DialogContent>
+          </Dialog>
+        </div>
       </CardContent>
     </Card>
   );
